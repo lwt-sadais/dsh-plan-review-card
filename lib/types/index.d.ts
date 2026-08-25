@@ -1,2 +1,4 @@
-/** Host-side plugin entry; all behavior is implemented by the browser client plugin. */
-export declare function apply(): void;
+import type { Context } from '@deepseek-ai/cordis';
+/** Register the structured-result tool and its model-facing semantic trigger guidance. */
+export declare const inject: string[];
+export declare function apply(ctx: Context): void;
