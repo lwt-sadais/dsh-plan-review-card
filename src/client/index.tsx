@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RESULT_CARD_TOOL, type ResultCardArgs, type ResultKind, type ReviewOutcome } from '../contract.js'
 
@@ -20,10 +20,10 @@ const STYLE_TEXT = `
 .dprc-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}.dprc-status{flex:none;border-radius:999px;padding:2px 8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:18px}
 .dprc-card[data-state="waiting"] .dprc-status{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}.dprc-card[data-state="approved"] .dprc-status{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
 .dprc-card[data-state="adjustment-requested"] .dprc-status,.dprc-card[data-state="rejected"] .dprc-status,.dprc-card[data-state="failed"] .dprc-status{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
-.dprc-chevron{width:16px;flex:none;color:var(--dsw-alias-label-tertiary);text-align:center}.dprc-detail{border-top:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base)}
-.dprc-markdown{max-height:min(60vh,620px);padding:16px 18px;overflow:auto;font-size:14px;line-height:24px}.dprc-actions{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--dsw-alias-border-l1);padding:10px 12px}
-.dprc-button{min-height:32px;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:5px 12px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}.dprc-button-primary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:white}.dprc-button:hover{filter:brightness(.96)}
-@media(max-width:720px){.dprc-summary{display:none}.dprc-status{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dprc-actions{flex-wrap:wrap}.dprc-button-primary{width:100%}}
+.dprc-chevron{width:16px;flex:none;color:var(--dsw-alias-label-tertiary);text-align:center}.dprc-overlay{position:fixed;z-index:1000;inset:0;background:rgba(0,0,0,.46);animation:dprc-fade-in 180ms ease-out}.dprc-panel{position:absolute;top:0;right:0;display:flex;width:min(680px,46vw);height:100%;flex-direction:column;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);box-shadow:-16px 0 40px rgba(0,0,0,.16);animation:dprc-slide-in 220ms ease-out}
+.dprc-panel-header{display:flex;min-height:72px;align-items:center;gap:12px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-panel-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px}.dprc-panel-title{overflow:hidden;color:var(--dsw-alias-label-primary);font-size:16px;font-weight:600;line-height:24px;text-overflow:ellipsis;white-space:nowrap}.dprc-panel-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}.dprc-close{display:grid;width:44px;height:44px;flex:none;cursor:pointer;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:22px}.dprc-close:hover,.dprc-close:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
+.dprc-markdown{min-height:0;flex:1;padding:20px 24px;overflow:auto;font-size:14px;line-height:24px}.dprc-actions{display:flex;flex:none;justify-content:flex-end;gap:8px;border-top:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-button{min-height:36px;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:6px 12px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}.dprc-button-primary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:white}.dprc-button:hover{filter:brightness(.96)}
+@keyframes dprc-fade-in{from{opacity:0}to{opacity:1}}@keyframes dprc-slide-in{from{transform:translateX(24px);opacity:.72}to{transform:translateX(0);opacity:1}}@media(max-width:720px){.dprc-summary{display:none}.dprc-status{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dprc-panel{width:100%;border-left:0}.dprc-panel-header{padding-top:max(12px,env(safe-area-inset-top))}.dprc-markdown{padding:16px}.dprc-actions{flex-wrap:wrap;padding-bottom:max(12px,env(safe-area-inset-bottom))}.dprc-button-primary{width:100%}}@media(prefers-reduced-motion:reduce){.dprc-overlay,.dprc-panel{animation:none}}
 `
 
 type CardState = 'waiting' | ReviewOutcome | 'failed'
@@ -136,17 +136,29 @@ function isolate(event: MouseEvent<HTMLButtonElement>): void {
   event.stopPropagation()
 }
 
-/** Render a persistent structured-result card for one present_result_card call. */
+/** Render a persistent structured-result card that opens its complete content in a side panel. */
 function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
   const model = useMemo(() => cardModel(block), [block])
-  const [expanded, setExpanded] = useState(false)
+  const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const toggle = (): void => setExpanded((value) => !value)
-  const toggleFromKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
+  const triggerRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const panelTitleId = `dprc-panel-title-${block.callId}`
+
+  /** Open the side panel and preserve the trigger for focus restoration. */
+  const showPanel = (): void => setOpen(true)
+  /** Close the side panel and restore keyboard focus to its card. */
+  const closePanel = (): void => {
+    setOpen(false)
+    window.setTimeout(() => triggerRef.current?.focus(), 0)
+  }
+  /** Open the side panel from keyboard activation keys. */
+  const openFromKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
-    toggle()
+    showPanel()
   }
+  /** Copy this card's complete Markdown and briefly confirm success. */
   const copy = (event: MouseEvent<HTMLButtonElement>): void => {
     isolate(event)
     copyMarkdown(model.content).then(() => {
@@ -154,37 +166,74 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
       window.setTimeout(() => setCopied(false), 1500)
     }).catch(() => setCopied(false))
   }
+  /** Download this card's complete Markdown as a local file. */
   const download = (event: MouseEvent<HTMLButtonElement>): void => {
     isolate(event)
     downloadMarkdown(model.title, model.content)
   }
+  /** Close the panel before focusing the authoritative review controls. */
   const review = (event: MouseEvent<HTMLButtonElement>): void => {
     isolate(event)
-    focusReview()
+    setOpen(false)
+    window.setTimeout(focusReview, 0)
   }
+  /** Close only when the user clicks the backdrop rather than panel content. */
+  const closeFromBackdrop = (event: MouseEvent<HTMLDivElement>): void => {
+    if (event.target === event.currentTarget) closePanel()
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const previousOverflow = document.body.style.overflow
+    /** Support the standard Escape route while the panel is open. */
+    const closeFromEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape') closePanel()
+    }
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', closeFromEscape)
+    closeRef.current?.focus()
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', closeFromEscape)
+    }
+  }, [open])
+
+  const panel = open ? (
+    <div className="dprc-overlay" onMouseDown={closeFromBackdrop}>
+      <aside className="dprc-panel" role="dialog" aria-modal="true" aria-labelledby={panelTitleId}>
+        <header className="dprc-panel-header">
+          <span className="dprc-icon" aria-hidden="true">▤</span>
+          <span className="dprc-panel-copy">
+            <span className="dprc-kind">{KIND_LABELS[model.kind]}</span>
+            <span id={panelTitleId} className="dprc-panel-title">{model.title}</span>
+            {model.summary !== '' && <span className="dprc-panel-summary">{model.summary}</span>}
+          </span>
+          <span className="dprc-status">{model.status}</span>
+          <button ref={closeRef} type="button" className="dprc-close" aria-label="关闭完整内容" onClick={closePanel}>×</button>
+        </header>
+        <div className="dprc-markdown">{model.content === '' ? '无法读取完整内容。' : <MarkdownText text={model.content} />}</div>
+        <footer className="dprc-actions">
+          {inspect !== undefined && <button type="button" className="dprc-button" onClick={(event) => { isolate(event); inspect() }}>查看调用</button>}
+          <button type="button" className="dprc-button" onClick={copy}>{copied ? '已复制' : '复制 Markdown'}</button>
+          <button type="button" className="dprc-button" onClick={download}>导出 Markdown</button>
+          {model.state === 'waiting' && <button type="button" className="dprc-button dprc-button-primary" onClick={review}>批准、拒绝或批注</button>}
+        </footer>
+      </aside>
+    </div>
+  ) : null
 
   return (
     <article className="dprc-card" data-state={model.state} data-tool={RESULT_CARD_TOOL}>
-      <div className="dprc-summary-row" role="button" tabIndex={0} aria-expanded={expanded} onClick={toggle} onKeyDown={toggleFromKeyboard}>
+      <div ref={triggerRef} className="dprc-summary-row" role="button" tabIndex={0} aria-haspopup="dialog" aria-expanded={open} onClick={showPanel} onKeyDown={openFromKeyboard}>
         <span className="dprc-icon" aria-hidden="true">▤</span>
         <span className="dprc-copy">
           <span className="dprc-heading"><span className="dprc-kind">{KIND_LABELS[model.kind]}</span><span className="dprc-title">{model.title}</span></span>
-          {!expanded && <span className="dprc-summary">{model.summary || '点击查看完整内容'}</span>}
+          <span className="dprc-summary">{model.summary || '点击查看完整内容'}</span>
         </span>
         <span className="dprc-status">{model.status}</span>
-        <span className="dprc-chevron" aria-hidden="true">{expanded ? '⌃' : '⌄'}</span>
+        <span className="dprc-chevron" aria-hidden="true">›</span>
       </div>
-      {expanded && (
-        <div className="dprc-detail">
-          <div className="dprc-markdown">{model.content === '' ? '无法读取完整内容。' : <MarkdownText text={model.content} />}</div>
-          <div className="dprc-actions">
-            {inspect !== undefined && <button type="button" className="dprc-button" onClick={(event) => { isolate(event); inspect() }}>查看调用</button>}
-            <button type="button" className="dprc-button" onClick={copy}>{copied ? '已复制' : '复制 Markdown'}</button>
-            <button type="button" className="dprc-button" onClick={download}>导出 Markdown</button>
-            {model.state === 'waiting' && <button type="button" className="dprc-button dprc-button-primary" onClick={review}>批准、拒绝或批注</button>}
-          </div>
-        </div>
-      )}
+      {panel}
     </article>
   )
 }
