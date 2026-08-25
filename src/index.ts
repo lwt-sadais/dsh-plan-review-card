@@ -10,11 +10,29 @@ import {
   resolveReview,
 } from './contract.js'
 
-const PROMPT_SECTION = `When the user asks for an implementation plan, proposal, evaluation, assessment, comparison report, feasibility study, audit report, or other substantial structured analysis as the final deliverable, present the final result by calling ${RESULT_CARD_TOOL} instead of pasting the complete document as ordinary assistant text.
+const PROMPT_SECTION = `When the user's requested final deliverable is an implementation plan, proposal, evaluation, assessment, comparison, feasibility study, audit, investigation report, root-cause analysis, code-review report, architecture analysis, or any other complete structured analysis, you MUST present it by calling ${RESULT_CARD_TOOL} instead of sending the document as ordinary assistant text.
 
-Use kind "plan" for implementation plans and proposals, "evaluation" for assessments and comparisons, and "report" for other structured analysis. Supply a concise title and summary plus the COMPLETE Markdown document in content. Make ${RESULT_CARD_TOOL} the only and final tool call in that assistant response.
+Classify by the nature of the work, not by the final response length. A concise conclusion still counts as a structured report when it is the final result of multi-step investigation, cross-file or cross-repository analysis, source-code tracing, commit/history inspection, test analysis, incident diagnosis, or evidence-backed comparison. In particular, a final root-cause conclusion that includes evidence and remediation or verification advice MUST use ${RESULT_CARD_TOOL} even if it fits in a short response.
 
-The user reviews the card interactively. If the tool result outcome is "approved", acknowledge briefly and stop. If it is "rejected", do not proceed unless the user later asks again. If it is "adjustment-requested", incorporate feedback, regenerate the complete document, and call ${RESULT_CARD_TOOL} again. Do not use this tool for short factual answers, routine progress updates, or ordinary conversational replies. When the session is in plan mode, obey its stricter workflow and use exit_plan_mode instead of this tool.`
+Use kind "plan" for implementation plans, migration plans, proposals, and technical designs; kind "evaluation" for assessments, feasibility studies, comparisons, risk reviews, and option selection; and kind "report" for root-cause analyses, investigation findings, audits, code-review findings, architecture analyses, and other evidence-backed reports.
+
+Before sending any final answer containing headings, multiple findings, evidence, root causes, risks, recommendations, remediation steps, or verification advice, perform this mandatory check: "Is this the requested final deliverable of an investigation, evaluation, plan, or structured analysis?" If yes, call ${RESULT_CARD_TOOL}. Do not paste the complete deliverable as assistant text before or after the tool call. Make ${RESULT_CARD_TOOL} the only and final action in that assistant response.
+
+Do NOT use ${RESULT_CARD_TOOL} for a single fact, a brief clarification, a direct yes/no answer, routine execution progress, a blocker notice, a request for missing information, or ordinary conversation when no structured final deliverable was requested.
+
+Positive examples that MUST use the card:
+- "Analyze why this bug occurs across the frontend and backend and give the final conclusion."
+- "Trace the code and commit history, then provide the root cause and remediation advice."
+- "Review this implementation and report risks and recommendations."
+- "Compare these approaches and recommend one."
+
+Negative examples that must remain ordinary text:
+- "What does this error message mean?"
+- "Which file did you change?"
+- "The test is still running."
+- "I need the server address before continuing."
+
+Supply a concise title and summary plus the COMPLETE Markdown document in content. The user reviews the card interactively. If the tool result outcome is "approved", acknowledge briefly and stop. If it is "rejected", do not proceed unless the user later asks again. If it is "adjustment-requested", incorporate the feedback, regenerate the COMPLETE document, and call ${RESULT_CARD_TOOL} again. When the session is in plan mode, obey its stricter workflow and use exit_plan_mode instead.`
 
 const parameters = {
   kind: {
