@@ -1,0 +1,64 @@
+{
+  "name": "dsh-plan-review-card",
+  "version": "0.1.0",
+  "description": "Persistent plan review cards for DeepSeek Harness conversations",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-tool",
+        "@deepseek-ai/dsh-client-ui-user-questions"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsdown && tsc -p tsconfig.host.json && tsc -p tsconfig.json --emitDeclarationOnly",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "pnpm run typecheck && pnpm run build"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-tool": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-user-questions": "^0.1.1-rc.2",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-tool": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-user-questions": "^0.1.1-rc.2",
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0",
+    "tsdown": "^0.15.7",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "lib",
+    "emitDeclarationOnly": false,
+    "declaration": false
+  },
+  "include": ["src/index.ts"],
+  "exclude": ["src/client/**"]
+}
