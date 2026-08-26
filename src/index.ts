@@ -73,7 +73,12 @@ const outputSchema = {
 } as const
 
 /** Register the structured-result tool and its model-facing semantic trigger guidance. */
-export const inject = ['tools', 'systemPrompt', 'userQuestions']
+export const inject = ['agents', 'tools', 'systemPrompt', 'userQuestions']
+
+/** Identify sessions owned by the subagent runtime rather than a direct user conversation. */
+export function isSubagentSession(header: { origin?: string }): boolean {
+  return header.origin === 'subagent'
+}
 
 export function apply(ctx: Context): void {
   ctx.systemPrompt.section({
@@ -95,6 +100,9 @@ export function apply(ctx: Context): void {
     },
     execute: async (args, exec) => {
       if (exec.agent === undefined) throw new Error(`${RESULT_CARD_TOOL} requires a live calling agent`)
+      if (isSubagentSession(exec.agent.session.header)) {
+        throw new Error(`${RESULT_CARD_TOOL} is unavailable to subagents`)
+      }
       try {
         const answer = await ctx.userQuestions.ask({
           agent: exec.agent,
@@ -133,4 +141,20 @@ export function apply(ctx: Context): void {
       content: result.content,
     }),
   }))
+
+  /** Remove both the capability and its trigger guidance from every subagent scope. */
+  const disableForSubagent = (agent: ReturnType<typeof ctx.agents.list>[number]): void => {
+    if (!isSubagentSession(agent.session.header)) return
+    agent.ctx.tools.restrict({ deny: [RESULT_CARD_TOOL] })
+    agent.ctx.systemPrompt.section({
+      name: 'result-card:policy',
+      order: 160,
+      text: '',
+    })
+  }
+
+  for (const agent of ctx.agents.list()) disableForSubagent(agent)
+  ctx.on('agent/created', ({ agent }) => {
+    disableForSubagent(agent)
+  })
 }
