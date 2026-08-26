@@ -84,7 +84,7 @@ pnpm run check
 
 ## 兼容性
 
-当前面向 DeepSeek Harness `0.1.1-rc.2` 的 Bundle、Tool、User Questions、Client Slot 与 Tool View 契约开发。
+兼容 DeepSeek Harness `0.1.1-rc.1` 至当前 `0.1.x` 的 Bundle、Tool、User Questions、Client Slot 与 Tool View 契约；当前开发与构建基线为 `0.1.1-rc.2`。
 
 ## 许可证
 
