@@ -1,8 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RESULT_CARD_TOOL, type ResultCardArgs, type ResultKind, type ReviewOutcome } from '../contract.js'
 
 const STYLE_ID = 'dsh-plan-review-card'
+const PANEL_WIDTH_STORAGE_KEY = 'dsh-plan-review-card:panel-width'
+const DEFAULT_PANEL_WIDTH = 480
+const MIN_PANEL_WIDTH = 320
+const MAX_PANEL_WIDTH = 760
+const PANEL_VIEWPORT_RATIO = 0.65
+const PANEL_WIDTH_STEP = 24
+const PANEL_OPEN_EVENT = 'dsh-plan-review-card:open-panel'
 const KIND_LABELS: Record<ResultKind, string> = {
   plan: '实施方案',
   evaluation: '评估报告',
@@ -20,10 +27,10 @@ const STYLE_TEXT = `
 .dprc-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}.dprc-status{flex:none;border-radius:999px;padding:2px 8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:18px}
 .dprc-card[data-state="waiting"] .dprc-status{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}.dprc-card[data-state="approved"] .dprc-status{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
 .dprc-card[data-state="adjustment-requested"] .dprc-status,.dprc-card[data-state="rejected"] .dprc-status,.dprc-card[data-state="failed"] .dprc-status{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}.dprc-card[data-state="cancelled"] .dprc-status{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
-.dprc-chevron{width:16px;flex:none;color:var(--dsw-alias-label-tertiary);text-align:center}.dprc-overlay{position:fixed;z-index:1000;inset:0;background:rgba(0,0,0,.46);animation:dprc-fade-in 180ms ease-out}.dprc-panel{position:absolute;top:0;right:0;display:flex;width:min(680px,46vw);height:100%;flex-direction:column;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);box-shadow:-16px 0 40px rgba(0,0,0,.16);animation:dprc-slide-in 220ms ease-out}
+.dprc-chevron{width:16px;flex:none;color:var(--dsw-alias-label-tertiary);text-align:center}.dprc-panel-layer{position:fixed;z-index:1000;top:0;right:0;height:100%;pointer-events:none}.dprc-panel{position:relative;display:flex;width:var(--dprc-panel-width);height:100%;pointer-events:auto;flex-direction:column;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);box-shadow:-12px 0 32px rgba(0,0,0,.14);animation:dprc-slide-in 180ms ease-out}.dprc-resize-handle{position:absolute;z-index:2;top:0;bottom:0;left:-5px;width:10px;cursor:col-resize;touch-action:none;outline:none}.dprc-resize-handle:after{position:absolute;top:50%;left:4px;width:3px;height:44px;border-radius:999px;background:var(--dsw-alias-border-l2);content:"";opacity:0;transform:translateY(-50%);transition:opacity 120ms ease}.dprc-resize-handle:hover:after,.dprc-resize-handle:focus-visible:after,.dprc-panel[data-resizing="true"] .dprc-resize-handle:after{opacity:1}
 .dprc-panel-header{display:flex;min-height:72px;align-items:center;gap:12px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-panel-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px}.dprc-panel-title{overflow:hidden;color:var(--dsw-alias-label-primary);font-size:16px;font-weight:600;line-height:24px;text-overflow:ellipsis;white-space:nowrap}.dprc-panel-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}.dprc-close{display:grid;width:44px;height:44px;flex:none;cursor:pointer;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:22px}.dprc-close:hover,.dprc-close:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
 .dprc-markdown{min-height:0;flex:1;padding:20px 24px;overflow:auto;font-size:14px;line-height:24px}.dprc-actions{display:flex;flex:none;justify-content:flex-end;gap:8px;border-top:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-button{min-height:36px;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:6px 12px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}.dprc-button-primary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:white}.dprc-button:hover{filter:brightness(.96)}
-@keyframes dprc-fade-in{from{opacity:0}to{opacity:1}}@keyframes dprc-slide-in{from{transform:translateX(24px);opacity:.72}to{transform:translateX(0);opacity:1}}@media(max-width:720px){.dprc-summary{display:none}.dprc-status{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dprc-panel{width:100%;border-left:0}.dprc-panel-header{padding-top:max(12px,env(safe-area-inset-top))}.dprc-markdown{padding:16px}.dprc-actions{flex-wrap:wrap;padding-bottom:max(12px,env(safe-area-inset-bottom))}.dprc-button-primary{width:100%}}@media(prefers-reduced-motion:reduce){.dprc-overlay,.dprc-panel{animation:none}}
+@keyframes dprc-slide-in{from{transform:translateX(24px);opacity:.72}to{transform:translateX(0);opacity:1}}@media(max-width:720px){.dprc-summary{display:none}.dprc-status{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dprc-panel-layer{left:0}.dprc-panel{width:100%;border-left:0}.dprc-resize-handle{display:none}.dprc-panel-header{padding-top:max(12px,env(safe-area-inset-top))}.dprc-markdown{padding:16px}.dprc-actions{flex-wrap:wrap;padding-bottom:max(12px,env(safe-area-inset-bottom))}.dprc-button-primary{width:100%}}@media(prefers-reduced-motion:reduce){.dprc-panel{animation:none}}
 `
 
 type CardState = 'waiting' | ReviewOutcome | 'failed'
@@ -137,22 +144,37 @@ function isolate(event: MouseEvent<HTMLButtonElement>): void {
   event.stopPropagation()
 }
 
+/** Keep the desktop panel inside readable and interaction-safe viewport bounds. */
+function clampPanelWidth(width: number): number {
+  const viewportMaximum = Math.floor(window.innerWidth * PANEL_VIEWPORT_RATIO)
+  return Math.min(Math.max(width, MIN_PANEL_WIDTH), Math.min(MAX_PANEL_WIDTH, viewportMaximum))
+}
+
+/** Restore the last valid desktop width without trusting stale browser storage. */
+function initialPanelWidth(): number {
+  const saved = Number.parseFloat(window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY) ?? '')
+  return clampPanelWidth(Number.isFinite(saved) ? saved : DEFAULT_PANEL_WIDTH)
+}
+
 /** Render a persistent structured-result card that opens its complete content in a side panel. */
 function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
   const model = useMemo(() => cardModel(block), [block])
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const triggerRef = useRef<HTMLDivElement>(null)
-  const closeRef = useRef<HTMLButtonElement>(null)
-  const panelTitleId = `dprc-panel-title-${block.callId}`
+  const [panelWidth, setPanelWidth] = useState(initialPanelWidth)
+  const [resizing, setResizing] = useState(false)
+  const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number }>()
+  const panelId = `dprc-panel-${block.callId}`
+  const panelTitleId = `${panelId}-title`
 
-  /** Open the side panel and preserve the trigger for focus restoration. */
-  const showPanel = (): void => setOpen(true)
-  /** Close the side panel and restore keyboard focus to its card. */
-  const closePanel = (): void => {
-    setOpen(false)
-    window.setTimeout(() => triggerRef.current?.focus(), 0)
+  /** Open this card and ask other card instances to release their panel. */
+  const showPanel = (): void => {
+    setPanelWidth(initialPanelWidth())
+    window.dispatchEvent(new CustomEvent(PANEL_OPEN_EVENT, { detail: block.callId }))
+    setOpen(true)
   }
+  /** Close the side panel without stealing focus from the conversation composer. */
+  const closePanel = (): void => setOpen(false)
   /** Open the side panel from keyboard activation keys. */
   const openFromKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -178,30 +200,75 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
     setOpen(false)
     window.setTimeout(focusReview, 0)
   }
-  /** Close only when the user clicks the backdrop rather than panel content. */
-  const closeFromBackdrop = (event: MouseEvent<HTMLDivElement>): void => {
-    if (event.target === event.currentTarget) closePanel()
+  /** Start pointer-captured resizing from the panel's left edge. */
+  const startResize = (event: PointerEvent<HTMLDivElement>): void => {
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: panelWidth }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setResizing(true)
+  }
+  /** Resize leftward to grow and rightward to shrink within safe viewport bounds. */
+  const resize = (event: PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current
+    if (drag === undefined || drag.pointerId !== event.pointerId) return
+    setPanelWidth(clampPanelWidth(drag.startWidth + drag.startX - event.clientX))
+  }
+  /** Persist the final width when pointer capture ends. */
+  const finishResize = (event: PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current
+    if (drag === undefined || drag.pointerId !== event.pointerId) return
+    const next = clampPanelWidth(drag.startWidth + drag.startX - event.clientX)
+    dragRef.current = undefined
+    setPanelWidth(next)
+    setResizing(false)
+    window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(next))
+  }
+  /** Support keyboard resizing and a predictable Home reset. */
+  const resizeFromKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return
+    event.preventDefault()
+    const next = event.key === 'Home'
+      ? clampPanelWidth(DEFAULT_PANEL_WIDTH)
+      : clampPanelWidth(panelWidth + (event.key === 'ArrowLeft' ? PANEL_WIDTH_STEP : -PANEL_WIDTH_STEP))
+    setPanelWidth(next)
+    window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(next))
+  }
+  /** Restore the default width from the resize handle. */
+  const resetPanelWidth = (): void => {
+    const next = clampPanelWidth(DEFAULT_PANEL_WIDTH)
+    setPanelWidth(next)
+    window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(next))
   }
 
   useEffect(() => {
+    /** Keep only one result panel visible across all persistent card instances. */
+    const closeForAnotherCard = (event: Event): void => {
+      if ((event as CustomEvent<string>).detail !== block.callId) setOpen(false)
+    }
+    window.addEventListener(PANEL_OPEN_EVENT, closeForAnotherCard)
+    return () => window.removeEventListener(PANEL_OPEN_EVENT, closeForAnotherCard)
+  }, [block.callId])
+
+  useEffect(() => {
     if (!open) return
-    const previousOverflow = document.body.style.overflow
-    /** Support the standard Escape route while the panel is open. */
+    /** Keep Escape available without changing focus or blocking native input. */
     const closeFromEscape = (event: globalThis.KeyboardEvent): void => {
       if (event.key === 'Escape') closePanel()
     }
-    document.body.style.overflow = 'hidden'
+    /** Re-clamp a saved or dragged width when the application viewport shrinks. */
+    const fitToViewport = (): void => setPanelWidth((current) => clampPanelWidth(current))
     document.addEventListener('keydown', closeFromEscape)
-    closeRef.current?.focus()
+    window.addEventListener('resize', fitToViewport)
     return () => {
-      document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', closeFromEscape)
+      window.removeEventListener('resize', fitToViewport)
     }
   }, [open])
 
+  const panelStyle = { '--dprc-panel-width': `${panelWidth}px` } as CSSProperties
   const panel = open ? (
-    <div className="dprc-overlay" onMouseDown={closeFromBackdrop}>
-      <aside className="dprc-panel" role="dialog" aria-modal="true" aria-labelledby={panelTitleId}>
+    <div className="dprc-panel-layer" style={panelStyle}>
+      <aside id={panelId} className="dprc-panel" role="complementary" aria-labelledby={panelTitleId} data-resizing={resizing || undefined}>
+        <div className="dprc-resize-handle" role="separator" tabIndex={0} aria-label="调整完整内容侧栏宽度" aria-orientation="vertical" aria-valuemin={MIN_PANEL_WIDTH} aria-valuemax={Math.min(MAX_PANEL_WIDTH, Math.floor(window.innerWidth * PANEL_VIEWPORT_RATIO))} aria-valuenow={Math.round(panelWidth)} onPointerDown={startResize} onPointerMove={resize} onPointerUp={finishResize} onPointerCancel={finishResize} onKeyDown={resizeFromKeyboard} onDoubleClick={resetPanelWidth} />
         <header className="dprc-panel-header">
           <span className="dprc-icon" aria-hidden="true">▤</span>
           <span className="dprc-panel-copy">
@@ -210,7 +277,7 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
             {model.summary !== '' && <span className="dprc-panel-summary">{model.summary}</span>}
           </span>
           <span className="dprc-status">{model.status}</span>
-          <button ref={closeRef} type="button" className="dprc-close" aria-label="关闭完整内容" onClick={closePanel}>×</button>
+          <button type="button" className="dprc-close" aria-label="关闭完整内容" onClick={closePanel}>×</button>
         </header>
         <div className="dprc-markdown">{model.content === '' ? '无法读取完整内容。' : <MarkdownText text={model.content} />}</div>
         <footer className="dprc-actions">
@@ -225,7 +292,7 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
 
   return (
     <article className="dprc-card" data-state={model.state} data-tool={RESULT_CARD_TOOL}>
-      <div ref={triggerRef} className="dprc-summary-row" role="button" tabIndex={0} aria-haspopup="dialog" aria-expanded={open} onClick={showPanel} onKeyDown={openFromKeyboard}>
+      <div className="dprc-summary-row" role="button" tabIndex={0} aria-controls={panelId} aria-expanded={open} onClick={showPanel} onKeyDown={openFromKeyboard}>
         <span className="dprc-icon" aria-hidden="true">▤</span>
         <span className="dprc-copy">
           <span className="dprc-heading"><span className="dprc-kind">{KIND_LABELS[model.kind]}</span><span className="dprc-title">{model.title}</span></span>
