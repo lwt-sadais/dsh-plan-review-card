@@ -19,7 +19,7 @@ const STYLE_TEXT = `
 .dprc-kind{flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px}.dprc-title{overflow:hidden;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600;line-height:20px;text-overflow:ellipsis;white-space:nowrap}
 .dprc-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}.dprc-status{flex:none;border-radius:999px;padding:2px 8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:18px}
 .dprc-card[data-state="waiting"] .dprc-status{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}.dprc-card[data-state="approved"] .dprc-status{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}
-.dprc-card[data-state="adjustment-requested"] .dprc-status,.dprc-card[data-state="rejected"] .dprc-status,.dprc-card[data-state="failed"] .dprc-status{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}
+.dprc-card[data-state="adjustment-requested"] .dprc-status,.dprc-card[data-state="rejected"] .dprc-status,.dprc-card[data-state="failed"] .dprc-status{background:var(--dsw-alias-state-error-tertiary);color:var(--dsw-alias-state-error-primary)}.dprc-card[data-state="cancelled"] .dprc-status{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 .dprc-chevron{width:16px;flex:none;color:var(--dsw-alias-label-tertiary);text-align:center}.dprc-overlay{position:fixed;z-index:1000;inset:0;background:rgba(0,0,0,.46);animation:dprc-fade-in 180ms ease-out}.dprc-panel{position:absolute;top:0;right:0;display:flex;width:min(680px,46vw);height:100%;flex-direction:column;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);box-shadow:-16px 0 40px rgba(0,0,0,.16);animation:dprc-slide-in 220ms ease-out}
 .dprc-panel-header{display:flex;min-height:72px;align-items:center;gap:12px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-panel-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px}.dprc-panel-title{overflow:hidden;color:var(--dsw-alias-label-primary);font-size:16px;font-weight:600;line-height:24px;text-overflow:ellipsis;white-space:nowrap}.dprc-panel-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}.dprc-close{display:grid;width:44px;height:44px;flex:none;cursor:pointer;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:22px}.dprc-close:hover,.dprc-close:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
 .dprc-markdown{min-height:0;flex:1;padding:20px 24px;overflow:auto;font-size:14px;line-height:24px}.dprc-actions{display:flex;flex:none;justify-content:flex-end;gap:8px;border-top:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-button{min-height:36px;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:6px 12px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}.dprc-button-primary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:white}.dprc-button:hover{filter:brightness(.96)}
@@ -90,7 +90,7 @@ function settledOutcome(block: SettledToolBlock): ReviewOutcome | undefined {
   const text = block.content.filter((item) => item.type === 'text').map((item) => item.text ?? '').join('\n')
   try {
     const value = JSON.parse(text) as { outcome?: string }
-    if (value.outcome === 'approved' || value.outcome === 'rejected' || value.outcome === 'adjustment-requested') return value.outcome
+    if (value.outcome === 'approved' || value.outcome === 'rejected' || value.outcome === 'adjustment-requested' || value.outcome === 'cancelled') return value.outcome
   } catch {}
   return undefined
 }
@@ -104,6 +104,7 @@ function cardModel(block: ToolBlock): CardModel {
   if (outcome === 'approved') return { ...args, state: outcome, status: '已批准' }
   if (outcome === 'rejected') return { ...args, state: outcome, status: '已拒绝' }
   if (outcome === 'adjustment-requested') return { ...args, state: outcome, status: '需调整' }
+  if (outcome === 'cancelled') return { ...args, state: outcome, status: '已取消' }
   return { ...args, state: 'failed', status: '审查未完成' }
 }
 

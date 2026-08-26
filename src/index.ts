@@ -7,6 +7,7 @@ import {
   REJECT_LABEL,
   RESULT_CARD_TOOL,
   REVIEW_QUESTION_ID,
+  formatReviewDetail,
   resolveReview,
 } from './contract.js'
 
@@ -32,7 +33,7 @@ Negative examples that must remain ordinary text:
 - "The test is still running."
 - "I need the server address before continuing."
 
-Supply a concise title and summary plus the COMPLETE Markdown document in content. The user reviews the card interactively. If the tool result outcome is "approved", acknowledge briefly and stop. If it is "rejected", do not proceed unless the user later asks again. If it is "adjustment-requested", incorporate the feedback, regenerate the COMPLETE document, and call ${RESULT_CARD_TOOL} again. When the session is in plan mode, obey its stricter workflow and use exit_plan_mode instead.`
+Supply a concise title and summary plus the COMPLETE Markdown document in content. The user reviews the card interactively. If the tool result outcome is "approved", acknowledge briefly and stop. If it is "rejected", do not proceed unless the user later asks again. If it is "cancelled", stop and wait for the user's next message without treating it as revision feedback. If it is "adjustment-requested", incorporate the feedback, regenerate the COMPLETE document, and call ${RESULT_CARD_TOOL} again. When the session is in plan mode, obey its stricter workflow and use exit_plan_mode instead.`
 
 const parameters = {
   kind: {
@@ -49,7 +50,7 @@ const parameters = {
   summary: {
     type: 'string',
     required: true,
-    description: 'One or two sentences summarizing the result for the collapsed card.',
+    description: 'One or two concise sentences, preferably 80–120 Chinese characters and never more than 160 characters.',
   },
   content: {
     type: 'string',
@@ -64,7 +65,7 @@ const outputSchema = {
   properties: {
     outcome: {
       type: 'string',
-      enum: ['approved', 'rejected', 'adjustment-requested'],
+      enum: ['approved', 'rejected', 'adjustment-requested', 'cancelled'],
       required: true,
     },
     feedback: { type: 'string' },
@@ -102,7 +103,7 @@ export function apply(ctx: Context): void {
             id: REVIEW_QUESTION_ID,
             header: args.kind === 'plan' ? '方案审查' : args.kind === 'evaluation' ? '评估审查' : '报告审查',
             question: `如何处理“${args.title}”？`,
-            detail: args.content,
+            detail: formatReviewDetail(args.title, args.summary),
             options: [
               { label: APPROVE_LABEL, description: '接受当前完整内容并结束本次审查。' },
               { label: ADJUST_LABEL, description: '保持任务运行，并通过自定义输入给出修改意见。' },
@@ -111,11 +112,11 @@ export function apply(ctx: Context): void {
           }],
         })
         const item = answer.answers.find((candidate) => candidate.id === REVIEW_QUESTION_ID)
-        if (item === undefined) return { outcome: 'adjustment-requested' as const }
+        if (item === undefined) return { outcome: 'cancelled' as const }
         return resolveReview(item.selected, item.custom)
       } catch (error) {
         if (error instanceof UserQuestionError && error.code === 'ASK_CANCELLED') {
-          return { outcome: 'adjustment-requested' as const, feedback: '用户关闭了审查卡片，准备通过普通消息补充意见。' }
+          return { outcome: 'cancelled' as const }
         }
         throw error
       }

@@ -11,10 +11,13 @@ export interface ResultCardArgs {
     summary: string;
     content: string;
 }
-export type ReviewOutcome = 'approved' | 'rejected' | 'adjustment-requested';
+export type ReviewOutcome = 'approved' | 'rejected' | 'adjustment-requested' | 'cancelled';
 export interface ReviewResult {
     outcome: ReviewOutcome;
     feedback?: string;
 }
+export declare const REVIEW_SUMMARY_MAX_CHARACTERS = 160;
+/** Build a compact review detail while preserving the full report in the result card. */
+export declare function formatReviewDetail(title: string, summary: string): string;
 /** Normalize the user's structured answer into the tool's stable review vocabulary. */
 export declare function resolveReview(selected: readonly string[], custom?: string): ReviewResult;
