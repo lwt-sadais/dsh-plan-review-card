@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RESULT_CARD_TOOL, type ResultCardArgs, type ResultKind, type ReviewOutcome } from '../contract.js'
 
@@ -269,7 +270,7 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
   }, [open])
 
   const panelStyle = { '--dprc-panel-width': `${panelWidth}px` } as CSSProperties
-  const panel = open ? (
+  const panel = open ? createPortal(
     <div className="dprc-panel-layer" style={panelStyle}>
       <aside id={panelId} className="dprc-panel" role="complementary" aria-labelledby={panelTitleId} data-resizing={resizing || undefined}>
         <div className="dprc-resize-handle" role="separator" tabIndex={0} aria-label="调整完整内容侧栏宽度" aria-orientation="vertical" aria-valuemin={MIN_PANEL_WIDTH} aria-valuemax={Math.min(MAX_PANEL_WIDTH, Math.floor(window.innerWidth * PANEL_VIEWPORT_RATIO))} aria-valuenow={Math.round(panelWidth)} onPointerDown={startResize} onPointerMove={resize} onPointerUp={finishResize} onPointerCancel={finishResize} onKeyDown={resizeFromKeyboard} onDoubleClick={resetPanelWidth} />
@@ -291,7 +292,8 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
           {model.state === 'waiting' && <button type="button" className="dprc-button dprc-button-primary" onClick={review}>批准、拒绝或批注</button>}
         </footer>
       </aside>
-    </div>
+    </div>,
+    document.body,
   ) : null
 
   return (
