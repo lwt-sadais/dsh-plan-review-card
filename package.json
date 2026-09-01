@@ -50,8 +50,14 @@
     "@deepseek-ai/dsh-system-prompt": "^0.1.2-alpha.1",
     "@deepseek-ai/dsh-tools": "^0.1.2-alpha.1",
     "@deepseek-ai/dsh-user-questions": "^0.1.2-alpha.1",
+    "dsh-better-sidebar": ">=0.17.1 <1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "dsh-better-sidebar": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -62,8 +68,10 @@
     "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.1",
     "@deepseek-ai/dsh-tools": "0.1.2-alpha.1",
     "@deepseek-ai/dsh-user-questions": "0.1.2-alpha.1",
+    "dsh-better-sidebar": "link:../DSH-better-sidebar",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "tsdown": "^0.15.7",
     "typescript": "^5.7.3",
     "vitest": "3.2.4"

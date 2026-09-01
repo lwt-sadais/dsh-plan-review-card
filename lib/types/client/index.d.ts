@@ -1,3 +1,4 @@
+import { type SidebarContext } from './sidebar-bridge.js';
 interface ContentBlock {
     type: string;
     text?: string;
@@ -27,11 +28,19 @@ interface SlotRegistry {
         key: string;
     }, component: (props: ToolRowProps) => JSX.Element): unknown;
 }
-interface ClientContext {
+interface ClientContext extends SidebarContext {
     slots: SlotRegistry;
+    sessions: {
+        list: {
+            getSnapshot(): {
+                current?: string;
+            };
+            subscribe(listener: () => void): () => void;
+        };
+    };
     effect(callback: () => () => void, label: string): () => void;
 }
-/** Register the keyed card renderer through DSH's public client Slot boundary. */
+/** Register the keyed card renderer and optional unified-sidebar result page. */
 export declare function apply(ctx: ClientContext): void;
 export declare const inject: string[];
 export {};

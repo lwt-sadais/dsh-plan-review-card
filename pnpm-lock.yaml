@@ -35,9 +35,15 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      dsh-better-sidebar:
+        specifier: link:../DSH-better-sidebar
+        version: link:../DSH-better-sidebar
       react:
         specifier: ^18.2.0
         version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
       tsdown:
         specifier: ^0.15.7
         version: 0.15.12(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(typescript@5.9.3)
