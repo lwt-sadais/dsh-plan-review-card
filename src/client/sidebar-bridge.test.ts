@@ -29,7 +29,7 @@ describe('result sidebar bridge', () => {
     expect(descriptor?.dedupeKey({ id: 'result-card:call-1' })).toBe('result-card:call-1')
   })
 
-  it('opens a deterministic per-call tab with no Markdown in persisted meta', () => {
+  it('opens a deterministic visible-content tab that expands the sidebar without persisting Markdown', () => {
     const openTab = vi.fn()
     const opened = openResultSidebar(
       { get: () => ({ openTab, getTab: () => ({}), isTabEnabled: () => true }) },
@@ -42,6 +42,7 @@ describe('result sidebar bridge', () => {
       type: RESULT_TAB_TYPE,
       id: 'result-card:call-1',
       title: '实现分析',
+      path: 'result-card:call-1',
       meta: { callId: 'call-1' },
     }, { sessionId: 'session-a' })
   })

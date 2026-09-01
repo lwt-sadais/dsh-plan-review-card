@@ -16,6 +16,7 @@ interface ResultTabSeed {
   type: string
   id: string
   title: string
+  path: string
   meta: ResultTabMeta
 }
 
@@ -75,6 +76,8 @@ export function openResultSidebar(
     type: RESULT_TAB_TYPE,
     id: `result-card:${callId}`,
     title,
+    // better-sidebar treats path-bearing requests as user-visible content opens and expands a collapsed host panel.
+    path: `result-card:${callId}`,
     meta: { callId },
   }, { sessionId })
   return true
