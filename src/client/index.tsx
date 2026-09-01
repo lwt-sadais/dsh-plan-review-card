@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
-import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RESULT_CARD_TOOL, type ResultCardArgs, type ResultKind, type ReviewOutcome } from '../contract.js'
 
+const MARKDOWN_LABELS: MarkdownLabels = {
+  code: { copyLabel: '复制代码', copiedLabel: '已复制' },
+  footnotes: '脚注',
+}
 const STYLE_ID = 'dsh-plan-review-card'
 const PANEL_WIDTH_STORAGE_KEY = 'dsh-plan-review-card:panel-width'
 const DEFAULT_PANEL_WIDTH = 480
@@ -279,7 +283,7 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
           <span className="dprc-status">{model.status}</span>
           <button type="button" className="dprc-close" aria-label="关闭完整内容" onClick={closePanel}>×</button>
         </header>
-        <div className="dprc-markdown">{model.content === '' ? '无法读取完整内容。' : <MarkdownText text={model.content} />}</div>
+        <div className="dprc-markdown">{model.content === '' ? '无法读取完整内容。' : <MarkdownText text={model.content} labels={MARKDOWN_LABELS} />}</div>
         <footer className="dprc-actions">
           {inspect !== undefined && <button type="button" className="dprc-button" onClick={(event) => { isolate(event); inspect() }}>查看调用</button>}
           <button type="button" className="dprc-button" onClick={copy}>{copied ? '已复制' : '复制 Markdown'}</button>
