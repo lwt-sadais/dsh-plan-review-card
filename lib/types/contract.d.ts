@@ -17,6 +17,26 @@ export interface ReviewResult {
     feedback?: string;
 }
 export declare const REVIEW_SUMMARY_MAX_CHARACTERS = 160;
+/** Display labels for the three structured-result categories. */
+export declare const RESULT_KIND_LABELS: Record<ResultKind, string>;
+/** Title fallback when card arguments cannot be parsed at all. */
+export declare const FALLBACK_CARD_TITLE = "\u7ED3\u6784\u5316\u7ED3\u679C";
+/** Review-status presentation shared by the replay client and the host card route. */
+export declare const WAITING_STATUS = "\u7B49\u5F85\u5BA1\u67E5";
+export declare const INTERRUPTED_STATUS = "\u5BA1\u67E5\u4E2D\u65AD";
+export declare const INCOMPLETE_STATUS = "\u5BA1\u67E5\u672A\u5B8C\u6210";
+export declare const REVIEW_OUTCOME_STATUS: Record<ReviewOutcome, string>;
+/** Replay-stable card presentation shared by the client registry and the host route. */
+export interface ResultCardModel {
+    kind: ResultKind;
+    title: string;
+    summary: string;
+    content: string;
+    state: 'waiting' | ReviewOutcome | 'failed';
+    status: string;
+}
+/** Normalize parsed card arguments into the replay-stable view the UI renders. */
+export declare function normalizeCardArgs(value: Partial<ResultCardArgs>): ResultCardArgs;
 /** Build a compact review detail while preserving the full report in the result card. */
 export declare function formatReviewDetail(title: string, summary: string): string;
 /** Normalize the user's structured answer into the tool's stable review vocabulary. */

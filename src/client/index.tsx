@@ -1,7 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import { RESULT_CARD_TOOL, type ResultCardArgs, type ResultKind, type ReviewOutcome } from '../contract.js'
+import {
+  FALLBACK_CARD_TITLE,
+  INCOMPLETE_STATUS,
+  INTERRUPTED_STATUS,
+  RESULT_CARD_TOOL,
+  RESULT_KIND_LABELS,
+  REVIEW_OUTCOME_STATUS,
+  WAITING_STATUS,
+  normalizeCardArgs,
+  type ResultCardArgs,
+  type ResultCardModel,
+  type ResultKind,
+  type ReviewOutcome,
+} from '../contract.js'
 import { ResultCardRegistry, type ResultCardViewModel } from './result-registry.js'
 import {
   openResultSidebar,
@@ -23,11 +37,8 @@ const MAX_PANEL_WIDTH = 760
 const PANEL_VIEWPORT_RATIO = 0.65
 const PANEL_WIDTH_STEP = 24
 const PANEL_OPEN_EVENT = 'dsh-plan-review-card:open-panel'
-const KIND_LABELS: Record<ResultKind, string> = {
-  plan: '实施方案',
-  evaluation: '评估报告',
-  report: '分析报告',
-}
+const REMOTE_OPEN_EVENT = 'dsh-plan-review-card:remote-open'
+const CARDS_ROUTE = '/plan-review-card/api/cards'
 const STYLE_TEXT = `
 .dprc-card{margin:4px 16px;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-specific-tip);color:var(--dsw-alias-label-primary)}
 .dprc-card[data-state="waiting"]{border-color:var(--dsw-alias-state-warn-secondary)}
@@ -45,9 +56,22 @@ const STYLE_TEXT = `
 .dprc-markdown{min-height:0;flex:1;padding:20px 24px;overflow:auto;font-size:14px;line-height:24px}.dprc-actions{display:flex;flex:none;justify-content:flex-end;gap:8px;border-top:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-button{min-height:36px;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:6px 12px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}.dprc-button-primary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:white}.dprc-button:hover{filter:brightness(.96)}
 .dprc-sidebar{display:flex;width:100%;height:100%;min-height:0;flex-direction:column;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.dprc-sidebar-header{display:flex;flex:none;align-items:center;gap:10px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:12px 14px}.dprc-sidebar-empty{display:grid;min-height:180px;place-items:center;padding:24px;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:22px;text-align:center}
 @keyframes dprc-slide-in{from{transform:translateX(24px);opacity:.72}to{transform:translateX(0);opacity:1}}@media(max-width:720px){.dprc-summary{display:none}.dprc-status{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dprc-panel-layer{left:0}.dprc-panel{width:100%;border-left:0}.dprc-resize-handle{display:none}.dprc-panel-header{padding-top:max(12px,env(safe-area-inset-top))}.dprc-markdown{padding:16px}.dprc-actions{flex-wrap:wrap;padding-bottom:max(12px,env(safe-area-inset-bottom))}.dprc-button-primary{width:100%}}@media(prefers-reduced-motion:reduce){.dprc-panel{animation:none}}
+.dprc-fab-layer{--dprc-fab-top:60px;position:fixed;z-index:26;top:var(--dprc-fab-top);right:12px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+body[data-dsh-desktop-mode] .dprc-fab-layer{--dprc-fab-top:52px}
+.dprc-fab{position:relative;display:grid;width:40px;height:40px;place-items:center;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:16px;box-shadow:0 4px 16px rgba(0,0,0,.12)}
+.dprc-fab:hover,.dprc-fab:focus-visible{filter:brightness(.96);outline:none}
+.dprc-fab-badge{position:absolute;top:-6px;right:-6px;min-width:18px;padding:0 5px;border-radius:999px;background:var(--dsw-alias-state-business-primary);color:#fff;font-size:11px;line-height:18px;text-align:center}
+.dprc-fab-list{width:320px;max-height:min(60vh,480px);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.dprc-fab-list-header{flex:none;border-bottom:1px solid var(--dsw-alias-border-l1);padding:10px 14px;color:var(--dsw-alias-label-secondary);font-size:12px}
+.dprc-fab-items{margin:0;padding:4px;list-style:none;overflow-y:auto}
+.dprc-fab-item{display:flex;width:100%;align-items:center;gap:10px;cursor:pointer;border:0;border-radius:10px;padding:8px 10px;background:transparent;color:inherit;font:inherit;text-align:left}
+.dprc-fab-item:hover,.dprc-fab-item:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
+.dprc-fab-item-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px}
+.dprc-fab-item-heading{display:flex;min-width:0;align-items:center;gap:7px}
+.dprc-fab-item-title{overflow:hidden;color:var(--dsw-alias-label-primary);font-size:13px;font-weight:600;line-height:20px;text-overflow:ellipsis;white-space:nowrap}
+.dprc-fab-item-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:720px){.dprc-fab-layer{--dprc-fab-top:12px}.dprc-fab-list{width:min(320px,calc(100vw - 24px))}}
 `
-
-type CardState = 'waiting' | ReviewOutcome | 'failed'
 
 interface ContentBlock {
   type: string
@@ -90,11 +114,6 @@ interface ClientContext extends SidebarContext {
   effect(callback: () => () => void, label: string): () => void
 }
 
-interface CardModel extends ResultCardArgs, ResultCardViewModel {
-  state: CardState
-  status: string
-}
-
 let activeContext: ClientContext | undefined
 let activeRegistry: ResultCardRegistry | undefined
 
@@ -111,16 +130,9 @@ function useCurrentSessionId(): string | undefined {
 function parseArgs(block: ToolBlock): ResultCardArgs {
   const raw = 'kind' in block ? block.call?.argsRaw : block.argsRaw
   try {
-    const value = JSON.parse(raw ?? '') as Partial<ResultCardArgs>
-    const kind = value.kind === 'plan' || value.kind === 'evaluation' || value.kind === 'report' ? value.kind : 'report'
-    return {
-      kind,
-      title: typeof value.title === 'string' && value.title.trim() !== '' ? value.title : KIND_LABELS[kind],
-      summary: typeof value.summary === 'string' ? value.summary : '',
-      content: typeof value.content === 'string' ? value.content : '',
-    }
+    return normalizeCardArgs(JSON.parse(raw ?? '') as Partial<ResultCardArgs>)
   } catch {
-    return { kind: 'report', title: '结构化结果', summary: '', content: '' }
+    return { kind: 'report', title: FALLBACK_CARD_TITLE, summary: '', content: '' }
   }
 }
 
@@ -135,16 +147,13 @@ function settledOutcome(block: SettledToolBlock): ReviewOutcome | undefined {
 }
 
 /** Derive one replay-stable card model from durable call and result data. */
-function cardModel(block: ToolBlock): CardModel {
+function cardModel(block: ToolBlock): ResultCardModel {
   const args = parseArgs(block)
-  if (!('kind' in block)) return { ...args, state: 'waiting', status: '等待审查' }
-  if (block.isError) return { ...args, state: 'failed', status: '审查中断' }
+  if (!('kind' in block)) return { ...args, state: 'waiting', status: WAITING_STATUS }
+  if (block.isError) return { ...args, state: 'failed', status: INTERRUPTED_STATUS }
   const outcome = settledOutcome(block)
-  if (outcome === 'approved') return { ...args, state: outcome, status: '已批准' }
-  if (outcome === 'rejected') return { ...args, state: outcome, status: '已拒绝' }
-  if (outcome === 'adjustment-requested') return { ...args, state: outcome, status: '需调整' }
-  if (outcome === 'cancelled') return { ...args, state: outcome, status: '已取消' }
-  return { ...args, state: 'failed', status: '审查未完成' }
+  if (outcome === undefined) return { ...args, state: 'failed', status: INCOMPLETE_STATUS }
+  return { ...args, state: outcome, status: REVIEW_OUTCOME_STATUS[outcome] }
 }
 
 /** Focus DSH's authoritative question panel instead of duplicating its response transport. */
@@ -221,7 +230,7 @@ function ResultCardSidebarView({ scope, tab }: ResultTabProps): JSX.Element {
       <header className="dprc-sidebar-header">
         <span className="dprc-icon" aria-hidden="true">▤</span>
         <span className="dprc-panel-copy">
-          <span className="dprc-kind">{KIND_LABELS[record.model.kind]}</span>
+          <span className="dprc-kind">{RESULT_KIND_LABELS[record.model.kind]}</span>
           <span className="dprc-panel-title">{record.model.title}</span>
           {record.model.summary !== '' && <span className="dprc-panel-summary">{record.model.summary}</span>}
         </span>
@@ -244,42 +253,36 @@ function initialPanelWidth(): number {
   return clampPanelWidth(Number.isFinite(saved) ? saved : DEFAULT_PANEL_WIDTH)
 }
 
-/** Render a persistent structured-result card that opens its complete content in a side panel. */
-function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
-  const model = useMemo(() => cardModel(block), [block])
-  const sessionId = useCurrentSessionId()
-  const [open, setOpen] = useState(false)
+/** Shared slide-in reading panel: width memory, edge resize, and the complete-result body. */
+function ResultPanel(props: {
+  model: ResultCardViewModel
+  inspect?: (() => void) | undefined
+  /** DOM id wiring from the owning card row (absent on quick-finder panels). */
+  panelId?: string
+  onReview: () => void
+  onClose: () => void
+}): JSX.Element {
+  const { model, inspect, panelId, onReview, onClose } = props
   const [panelWidth, setPanelWidth] = useState(initialPanelWidth)
   const [resizing, setResizing] = useState(false)
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number }>()
-  const panelId = `dprc-panel-${block.callId}`
-  const panelTitleId = `${panelId}-title`
+  const panelTitleId = panelId === undefined ? undefined : `${panelId}-title`
 
   useEffect(() => {
-    const registry = activeRegistry
-    if (registry === undefined || sessionId === undefined) return
-    registry.publish(sessionId, block.callId, { model, ...(inspect === undefined ? {} : { inspect }) })
-    return () => {
-      if (inspect !== undefined) registry.removeInspect(sessionId, block.callId, inspect)
+    /** Keep Escape available without changing focus or blocking native input. */
+    const closeFromEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
     }
-  }, [sessionId, block.callId, model, inspect])
+    /** Re-clamp a saved or dragged width when the application viewport shrinks. */
+    const fitToViewport = (): void => setPanelWidth((current) => clampPanelWidth(current))
+    document.addEventListener('keydown', closeFromEscape)
+    window.addEventListener('resize', fitToViewport)
+    return () => {
+      document.removeEventListener('keydown', closeFromEscape)
+      window.removeEventListener('resize', fitToViewport)
+    }
+  }, [onClose])
 
-  /** Open this card in the unified sidebar, falling back to the legacy Portal. */
-  const showPanel = (): void => {
-    if (sessionId !== undefined && activeContext !== undefined
-      && openResultSidebar(activeContext, sessionId, block.callId, model.title)) return
-    setPanelWidth(initialPanelWidth())
-    window.dispatchEvent(new CustomEvent(PANEL_OPEN_EVENT, { detail: block.callId }))
-    setOpen(true)
-  }
-  /** Close the side panel without stealing focus from the conversation composer. */
-  const closePanel = (): void => setOpen(false)
-  /** Open the side panel from keyboard activation keys. */
-  const openFromKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    showPanel()
-  }
   /** Start pointer-captured resizing from the panel's left edge. */
   const startResize = (event: PointerEvent<HTMLDivElement>): void => {
     dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: panelWidth }
@@ -319,6 +322,59 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
     window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(next))
   }
 
+  const panelStyle = { '--dprc-panel-width': `${panelWidth}px` } as CSSProperties
+  return (
+    <div className="dprc-panel-layer" style={panelStyle}>
+      <aside id={panelId} className="dprc-panel" role="complementary" aria-labelledby={panelTitleId} aria-label={model.title} data-resizing={resizing || undefined}>
+        <div className="dprc-resize-handle" role="separator" tabIndex={0} aria-label="调整完整内容侧栏宽度" aria-orientation="vertical" aria-valuemin={MIN_PANEL_WIDTH} aria-valuemax={Math.min(MAX_PANEL_WIDTH, Math.floor(window.innerWidth * PANEL_VIEWPORT_RATIO))} aria-valuenow={Math.round(panelWidth)} onPointerDown={startResize} onPointerMove={resize} onPointerUp={finishResize} onPointerCancel={finishResize} onKeyDown={resizeFromKeyboard} onDoubleClick={resetPanelWidth} />
+        <header className="dprc-panel-header">
+          <span className="dprc-icon" aria-hidden="true">▤</span>
+          <span className="dprc-panel-copy">
+            <span className="dprc-kind">{RESULT_KIND_LABELS[model.kind]}</span>
+            <span id={panelTitleId} className="dprc-panel-title">{model.title}</span>
+            {model.summary !== '' && <span className="dprc-panel-summary">{model.summary}</span>}
+          </span>
+          <span className="dprc-status">{model.status}</span>
+          <button type="button" className="dprc-close" aria-label="关闭完整内容" onClick={onClose}>×</button>
+        </header>
+        <ResultContent model={model} inspect={inspect} onReview={onReview} />
+      </aside>
+    </div>
+  )
+}
+
+/** Render a persistent structured-result card that opens its complete content in a side panel. */
+function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
+  const model = useMemo(() => cardModel(block), [block])
+  const sessionId = useCurrentSessionId()
+  const [open, setOpen] = useState(false)
+  const panelId = `dprc-panel-${block.callId}`
+
+  useEffect(() => {
+    const registry = activeRegistry
+    if (registry === undefined || sessionId === undefined) return
+    registry.publish(sessionId, block.callId, { model, ...(inspect === undefined ? {} : { inspect }) })
+    return () => {
+      if (inspect !== undefined) registry.removeInspect(sessionId, block.callId, inspect)
+    }
+  }, [sessionId, block.callId, model, inspect])
+
+  /** Open this card in the unified sidebar, falling back to the legacy Portal. */
+  const showPanel = (): void => {
+    if (sessionId !== undefined && activeContext !== undefined
+      && openResultSidebar(activeContext, sessionId, block.callId, model.title)) return
+    window.dispatchEvent(new CustomEvent(PANEL_OPEN_EVENT, { detail: block.callId }))
+    setOpen(true)
+  }
+  /** Close the side panel without stealing focus from the conversation composer. */
+  const closePanel = (): void => setOpen(false)
+  /** Open the side panel from keyboard activation keys. */
+  const openFromKeyboard = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    showPanel()
+  }
+
   useEffect(() => {
     /** Keep only one result panel visible across all persistent card instances. */
     const closeForAnotherCard = (event: Event): void => {
@@ -329,55 +385,35 @@ function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
   }, [block.callId])
 
   useEffect(() => {
-    if (!open) return
-    /** Keep Escape available without changing focus or blocking native input. */
-    const closeFromEscape = (event: globalThis.KeyboardEvent): void => {
-      if (event.key === 'Escape') closePanel()
+    /** Reveal this card when the floating quick finder targets it. */
+    const openFromFinder = (event: Event): void => {
+      if ((event as CustomEvent<string>).detail !== block.callId) return
+      setOpen(true)
     }
-    /** Re-clamp a saved or dragged width when the application viewport shrinks. */
-    const fitToViewport = (): void => setPanelWidth((current) => clampPanelWidth(current))
-    document.addEventListener('keydown', closeFromEscape)
-    window.addEventListener('resize', fitToViewport)
-    return () => {
-      document.removeEventListener('keydown', closeFromEscape)
-      window.removeEventListener('resize', fitToViewport)
-    }
-  }, [open])
+    window.addEventListener(REMOTE_OPEN_EVENT, openFromFinder)
+    return () => window.removeEventListener(REMOTE_OPEN_EVENT, openFromFinder)
+  }, [block.callId])
 
-  const panelStyle = { '--dprc-panel-width': `${panelWidth}px` } as CSSProperties
   const panel = open ? createPortal(
-    <div className="dprc-panel-layer" style={panelStyle}>
-      <aside id={panelId} className="dprc-panel" role="complementary" aria-labelledby={panelTitleId} data-resizing={resizing || undefined}>
-        <div className="dprc-resize-handle" role="separator" tabIndex={0} aria-label="调整完整内容侧栏宽度" aria-orientation="vertical" aria-valuemin={MIN_PANEL_WIDTH} aria-valuemax={Math.min(MAX_PANEL_WIDTH, Math.floor(window.innerWidth * PANEL_VIEWPORT_RATIO))} aria-valuenow={Math.round(panelWidth)} onPointerDown={startResize} onPointerMove={resize} onPointerUp={finishResize} onPointerCancel={finishResize} onKeyDown={resizeFromKeyboard} onDoubleClick={resetPanelWidth} />
-        <header className="dprc-panel-header">
-          <span className="dprc-icon" aria-hidden="true">▤</span>
-          <span className="dprc-panel-copy">
-            <span className="dprc-kind">{KIND_LABELS[model.kind]}</span>
-            <span id={panelTitleId} className="dprc-panel-title">{model.title}</span>
-            {model.summary !== '' && <span className="dprc-panel-summary">{model.summary}</span>}
-          </span>
-          <span className="dprc-status">{model.status}</span>
-          <button type="button" className="dprc-close" aria-label="关闭完整内容" onClick={closePanel}>×</button>
-        </header>
-        <ResultContent
-          model={model}
-          inspect={inspect}
-          onReview={() => {
-            setOpen(false)
-            window.setTimeout(focusReview, 0)
-          }}
-        />
-      </aside>
-    </div>,
+    <ResultPanel
+      panelId={panelId}
+      model={model}
+      inspect={inspect}
+      onClose={closePanel}
+      onReview={() => {
+        setOpen(false)
+        window.setTimeout(focusReview, 0)
+      }}
+    />,
     document.body,
   ) : null
 
   return (
-    <article className="dprc-card" data-state={model.state} data-tool={RESULT_CARD_TOOL}>
+    <article className="dprc-card" data-state={model.state} data-tool={RESULT_CARD_TOOL} data-dprc-call-id={block.callId}>
       <div className="dprc-summary-row" role="button" tabIndex={0} aria-controls={panelId} aria-expanded={open} onClick={showPanel} onKeyDown={openFromKeyboard}>
         <span className="dprc-icon" aria-hidden="true">▤</span>
         <span className="dprc-copy">
-          <span className="dprc-heading"><span className="dprc-kind">{KIND_LABELS[model.kind]}</span><span className="dprc-title">{model.title}</span></span>
+          <span className="dprc-heading"><span className="dprc-kind">{RESULT_KIND_LABELS[model.kind]}</span><span className="dprc-title">{model.title}</span></span>
           <span className="dprc-summary">{model.summary || '点击查看完整内容'}</span>
         </span>
         <span className="dprc-status">{model.status}</span>
@@ -399,6 +435,178 @@ function installStyle(): () => void {
   return () => style.remove()
 }
 
+/** One quick-finder row: the call identity plus its latest replay-derived model. */
+interface FloatingCardEntry {
+  callId: string
+  model: ResultCardViewModel
+}
+
+/** Session-keyed guard so repeated opens never duplicate the durable backfill fetch. */
+const backfillInFlight = new Set<string>()
+
+/** Backfill durable cards the conversation has not mounted yet from the host route. */
+async function backfillHostCards(sessionId: string): Promise<void> {
+  const registry = activeRegistry
+  if (registry === undefined || backfillInFlight.has(sessionId)) return
+  backfillInFlight.add(sessionId)
+  try {
+    const response = await fetch(CARDS_ROUTE, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    })
+    if (!response.ok) return
+    const data = await response.json() as { cards?: Array<{ callId?: unknown; model?: Partial<ResultCardModel> }> }
+    for (const card of data.cards ?? []) {
+      if (typeof card.callId !== 'string' || card.callId === '') continue
+      if (registry.get(sessionId, card.callId) !== undefined) continue
+      const model = card.model
+      if (typeof model?.title !== 'string' || typeof model.content !== 'string') continue
+      const kind: ResultKind = model.kind === 'plan' || model.kind === 'evaluation' || model.kind === 'report' ? model.kind : 'report'
+      const state: ResultCardModel['state'] = model.state === 'waiting' || model.state === 'failed'
+        || model.state === 'approved' || model.state === 'rejected'
+        || model.state === 'adjustment-requested' || model.state === 'cancelled'
+        ? model.state
+        : 'waiting'
+      registry.publish(sessionId, card.callId, {
+        model: {
+          kind,
+          title: model.title,
+          summary: typeof model.summary === 'string' ? model.summary : '',
+          content: model.content,
+          state,
+          status: typeof model.status === 'string' ? model.status : WAITING_STATUS,
+        },
+      })
+    }
+  } catch {
+    // Route unavailable (older host half) or network failure: keep the in-memory
+    // registry as-is — cards still appear as their message rows mount.
+  } finally {
+    backfillInFlight.delete(sessionId)
+  }
+}
+
+/** Floating top-right quick finder listing every known result card of the current session. */
+function FloatingCardList(): JSX.Element | null {
+  const registry = activeRegistry
+  const sessionId = useCurrentSessionId()
+  const [open, setOpen] = useState(false)
+  const [entries, setEntries] = useState<FloatingCardEntry[]>([])
+  const [panelCallId, setPanelCallIdState] = useState<string>()
+  const panelCallIdRef = useRef<string>()
+
+  /** Keep the ref aligned so panel-exclusivity listeners always read the live value. */
+  const setPanelCallId = useCallback((callId: string | undefined) => {
+    panelCallIdRef.current = callId
+    setPanelCallIdState(callId)
+  }, [])
+
+  /** Re-read the registry snapshot on every mutation and session switch. */
+  const sync = useCallback(() => {
+    if (registry === undefined) return
+    setEntries(registry.records(sessionId ?? '').map((ref) => ({ callId: ref.callId, model: ref.record.model })))
+  }, [registry, sessionId])
+
+  useEffect(() => {
+    if (registry === undefined) return
+    sync()
+    return registry.subscribeChanges(sync)
+  }, [registry, sync])
+
+  useEffect(() => {
+    if (sessionId === undefined) return
+    /** Fill the list with durable history even before the message rows mount. */
+    void backfillHostCards(sessionId)
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!open) return
+    /** Close the dropdown on outside presses or Escape without stealing focus. */
+    const closeOnOutsidePointer = (event: globalThis.PointerEvent): void => {
+      if ((event.target as Element | null)?.closest?.('[data-dprc-floating]') === null) setOpen(false)
+    }
+    const closeFromEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    document.addEventListener('keydown', closeFromEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+      document.removeEventListener('keydown', closeFromEscape)
+    }
+  }, [open])
+
+  useEffect(() => {
+    /** Card-row panels outrank the finder panel: close when any other panel opens. */
+    const closeForCardPanel = (event: Event): void => {
+      if ((event as CustomEvent<string>).detail !== panelCallIdRef.current) setPanelCallId(undefined)
+    }
+    window.addEventListener(PANEL_OPEN_EVENT, closeForCardPanel)
+    return () => window.removeEventListener(PANEL_OPEN_EVENT, closeForCardPanel)
+  }, [setPanelCallId])
+
+  /** Open one card: sidebar first, then reveal the mounted row, else read in place. */
+  const openCard = useCallback((entry: FloatingCardEntry): void => {
+    setOpen(false)
+    if (sessionId !== undefined && activeContext !== undefined
+      && openResultSidebar(activeContext, sessionId, entry.callId, entry.model.title)) return
+    window.dispatchEvent(new CustomEvent(PANEL_OPEN_EVENT, { detail: entry.callId }))
+    const row = document.querySelector<HTMLElement>(`[data-dprc-call-id="${CSS.escape(entry.callId)}"]`)
+    if (row !== null) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      window.dispatchEvent(new CustomEvent(REMOTE_OPEN_EVENT, { detail: entry.callId }))
+      setPanelCallId(undefined)
+      return
+    }
+    setPanelCallId(entry.callId)
+  }, [sessionId, setPanelCallId])
+
+  if (registry === undefined || sessionId === undefined || entries.length === 0) return null
+
+  const panelRecord = panelCallId === undefined ? undefined : registry.get(sessionId, panelCallId)
+  return (
+    <>
+      <div className="dprc-fab-layer" data-dprc-floating="">
+        {open && (
+          <div className="dprc-fab-list" role="group" aria-label="结果卡片列表">
+            <div className="dprc-fab-list-header">结果卡片（{entries.length}）</div>
+            <ul className="dprc-fab-items">
+              {entries.slice().reverse().map((entry) => (
+                <li key={entry.callId}>
+                  <button type="button" className="dprc-fab-item" data-state={entry.model.state} onClick={() => openCard(entry)}>
+                    <span className="dprc-icon" aria-hidden="true">▤</span>
+                    <span className="dprc-fab-item-copy">
+                      <span className="dprc-fab-item-heading">
+                        <span className="dprc-kind">{RESULT_KIND_LABELS[entry.model.kind]}</span>
+                        <span className="dprc-fab-item-title">{entry.model.title}</span>
+                      </span>
+                      <span className="dprc-fab-item-summary">{entry.model.summary || '点击查看完整内容'}</span>
+                    </span>
+                    <span className="dprc-status">{entry.model.status}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <button type="button" className="dprc-fab" aria-label="结果卡片列表" aria-expanded={open} onClick={() => setOpen(!open)}>
+          ▤{entries.length > 0 && <span className="dprc-fab-badge">{entries.length}</span>}
+        </button>
+      </div>
+      {panelCallId !== undefined && panelRecord !== undefined && createPortal(
+        <ResultPanel
+          model={panelRecord.model}
+          inspect={panelRecord.inspect}
+          onClose={() => setPanelCallId(undefined)}
+          onReview={focusReview}
+        />,
+        document.body,
+      )}
+    </>
+  )
+}
+
 /** Register the keyed card renderer and optional unified-sidebar result page. */
 export function apply(ctx: ClientContext): void {
   const registry = new ResultCardRegistry()
@@ -407,6 +615,18 @@ export function apply(ctx: ClientContext): void {
   registerResultSidebar(ctx, ResultCardSidebarView)
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: RESULT_CARD_TOOL }, ResultCard))
   ctx.effect(installStyle, 'dsh-plan-review-card: stylesheet')
+  ctx.effect(() => {
+    /** Mount the floating quick finder on a body-level host the plugin lifecycle owns. */
+    const host = document.createElement('div')
+    host.dataset.dprcFloatingHost = ''
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    root.render(<FloatingCardList />)
+    return () => {
+      root.unmount()
+      host.remove()
+    }
+  }, 'dsh-plan-review-card: floating finder host')
   ctx.effect(() => () => {
     registry.clear()
     if (activeRegistry === registry) activeRegistry = undefined

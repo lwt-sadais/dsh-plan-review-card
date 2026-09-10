@@ -27,4 +27,26 @@ describe('complete result presentation boundaries', () => {
     expect(bridge).toContain('meta: { callId }')
     expect(bridge).not.toContain('meta: { callId, content')
   })
+
+  it('mounts a body-level floating quick finder owned by the plugin lifecycle', async () => {
+    const source = await clientSource()
+    expect(source).toMatch(/function FloatingCardList/u)
+    expect(source).toContain('createRoot(host)')
+    expect(source).toContain('host.dataset.dprcFloatingHost')
+    expect(source).toContain('root.render(<FloatingCardList />)')
+  })
+
+  it('opens finder cards through the sidebar, mounted-row reveal, or embedded panel', async () => {
+    const source = await clientSource()
+    expect(source).toContain('data-dprc-call-id={block.callId}')
+    expect(source).toContain('openResultSidebar(activeContext, sessionId, entry.callId, entry.model.title)')
+    expect(source).toContain('window.dispatchEvent(new CustomEvent(REMOTE_OPEN_EVENT, { detail: entry.callId }))')
+    expect(source).toContain('setPanelCallId(entry.callId)')
+  })
+
+  it('backfills durable cards from the host route without clobbering mounted records', async () => {
+    const source = await clientSource()
+    expect(source).toContain('fetch(CARDS_ROUTE')
+    expect(source).toContain('registry.get(sessionId, card.callId) !== undefined) continue')
+  })
 })

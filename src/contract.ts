@@ -23,6 +23,48 @@ export interface ReviewResult {
 
 export const REVIEW_SUMMARY_MAX_CHARACTERS = 160
 
+/** Display labels for the three structured-result categories. */
+export const RESULT_KIND_LABELS: Record<ResultKind, string> = {
+  plan: '实施方案',
+  evaluation: '评估报告',
+  report: '分析报告',
+}
+
+/** Title fallback when card arguments cannot be parsed at all. */
+export const FALLBACK_CARD_TITLE = '结构化结果'
+
+/** Review-status presentation shared by the replay client and the host card route. */
+export const WAITING_STATUS = '等待审查'
+export const INTERRUPTED_STATUS = '审查中断'
+export const INCOMPLETE_STATUS = '审查未完成'
+export const REVIEW_OUTCOME_STATUS: Record<ReviewOutcome, string> = {
+  approved: '已批准',
+  rejected: '已拒绝',
+  'adjustment-requested': '需调整',
+  cancelled: '已取消',
+}
+
+/** Replay-stable card presentation shared by the client registry and the host route. */
+export interface ResultCardModel {
+  kind: ResultKind
+  title: string
+  summary: string
+  content: string
+  state: 'waiting' | ReviewOutcome | 'failed'
+  status: string
+}
+
+/** Normalize parsed card arguments into the replay-stable view the UI renders. */
+export function normalizeCardArgs(value: Partial<ResultCardArgs>): ResultCardArgs {
+  const kind = value.kind === 'plan' || value.kind === 'evaluation' || value.kind === 'report' ? value.kind : 'report'
+  return {
+    kind,
+    title: typeof value.title === 'string' && value.title.trim() !== '' ? value.title : RESULT_KIND_LABELS[kind],
+    summary: typeof value.summary === 'string' ? value.summary : '',
+    content: typeof value.content === 'string' ? value.content : '',
+  }
+}
+
 /** Build a compact review detail while preserving the full report in the result card. */
 export function formatReviewDetail(title: string, summary: string): string {
   const normalized = summary.trim().replace(/\s+/gu, ' ')

@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
+import { registerCardsRoute, type CardsRouteContext } from './cards-route.js'
 import {
   ADJUST_LABEL,
   APPROVE_LABEL,
@@ -73,7 +74,7 @@ const outputSchema = {
 } as const
 
 /** Register the structured-result tool and its model-facing semantic trigger guidance. */
-export const inject = ['agents', 'tools', 'systemPrompt', 'userQuestions']
+export const inject = ['agents', 'tools', 'systemPrompt', 'userQuestions', 'webServer', 'sessions', 'webRuntime']
 
 /** Identify sessions owned by the subagent runtime rather than a direct user conversation. */
 export function isSubagentSession(header: { origin?: string }): boolean {
@@ -81,6 +82,10 @@ export function isSubagentSession(header: { origin?: string }): boolean {
 }
 
 export function apply(ctx: Context): void {
+  // The card-finder route reads the session store through a structural face;
+  // the harness Context provides these services at runtime via `inject`.
+  registerCardsRoute(ctx as Context & CardsRouteContext)
+
   ctx.systemPrompt.section({
     name: 'result-card:policy',
     order: 160,

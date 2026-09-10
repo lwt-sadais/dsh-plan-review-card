@@ -18,6 +18,7 @@ interface ResultTabSeed {
     type: string;
     id: string;
     title: string;
+    path: string;
     meta: ResultTabMeta;
 }
 interface BetterSidebarService {
