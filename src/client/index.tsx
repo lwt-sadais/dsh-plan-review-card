@@ -39,6 +39,13 @@ const PANEL_WIDTH_STEP = 24
 const PANEL_OPEN_EVENT = 'dsh-plan-review-card:open-panel'
 const REMOTE_OPEN_EVENT = 'dsh-plan-review-card:remote-open'
 const CARDS_ROUTE = '/plan-review-card/api/cards'
+const LIST_POSITION_STORAGE_KEY = 'dsh-plan-review-card:list-position'
+/** The official session-log export capsule (CSS Modules hash prefix may drift; match the stable suffix). */
+const SESSION_LOG_BUTTON_SELECTOR = 'button[class*="sessionLogButton"]'
+/** Horizontal gap between the quick finder and the Session-log capsule when anchored. */
+const FAB_ANCHOR_GAP = 8
+/** Fallback interval for re-reading the anchored capsule's geometry. */
+const FAB_ANCHOR_POLL_INTERVAL = 600
 const STYLE_TEXT = `
 .dprc-card{margin:4px 16px;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-specific-tip);color:var(--dsw-alias-label-primary)}
 .dprc-card[data-state="waiting"]{border-color:var(--dsw-alias-state-warn-secondary)}
@@ -56,13 +63,17 @@ const STYLE_TEXT = `
 .dprc-markdown{min-height:0;flex:1;padding:20px 24px;overflow:auto;font-size:14px;line-height:24px}.dprc-actions{display:flex;flex:none;justify-content:flex-end;gap:8px;border-top:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-button{min-height:36px;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:6px 12px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}.dprc-button-primary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:white}.dprc-button:hover{filter:brightness(.96)}
 .dprc-sidebar{display:flex;width:100%;height:100%;min-height:0;flex-direction:column;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.dprc-sidebar-header{display:flex;flex:none;align-items:center;gap:10px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:12px 14px}.dprc-sidebar-empty{display:grid;min-height:180px;place-items:center;padding:24px;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:22px;text-align:center}
 @keyframes dprc-slide-in{from{transform:translateX(24px);opacity:.72}to{transform:translateX(0);opacity:1}}@media(max-width:720px){.dprc-summary{display:none}.dprc-status{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dprc-panel-layer{left:0}.dprc-panel{width:100%;border-left:0}.dprc-resize-handle{display:none}.dprc-panel-header{padding-top:max(12px,env(safe-area-inset-top))}.dprc-markdown{padding:16px}.dprc-actions{flex-wrap:wrap;padding-bottom:max(12px,env(safe-area-inset-bottom))}.dprc-button-primary{width:100%}}@media(prefers-reduced-motion:reduce){.dprc-panel{animation:none}}
-.dprc-fab-layer{--dprc-fab-top:60px;position:fixed;z-index:26;top:var(--dprc-fab-top);right:12px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
-body[data-dsh-desktop-mode] .dprc-fab-layer{--dprc-fab-top:52px}
+.dprc-fab-layer{position:fixed;z-index:26;left:var(--dprc-fab-left,auto);top:var(--dprc-fab-top,60px);right:var(--dprc-fab-right,12px);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.dprc-fab-layer[data-anchored="true"]{right:auto}
 .dprc-fab{position:relative;display:grid;width:40px;height:40px;place-items:center;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:16px;box-shadow:0 4px 16px rgba(0,0,0,.12)}
 .dprc-fab:hover,.dprc-fab:focus-visible{filter:brightness(.96);outline:none}
 .dprc-fab-badge{position:absolute;top:-6px;right:-6px;min-width:18px;padding:0 5px;border-radius:999px;background:var(--dsw-alias-state-business-primary);color:#fff;font-size:11px;line-height:18px;text-align:center}
-.dprc-fab-list{width:320px;max-height:min(60vh,480px);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 8px 28px rgba(0,0,0,.16)}
-.dprc-fab-list-header{flex:none;border-bottom:1px solid var(--dsw-alias-border-l1);padding:10px 14px;color:var(--dsw-alias-label-secondary);font-size:12px}
+.dprc-fab-list{position:fixed;width:320px;max-height:min(60vh,480px);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.dprc-fab-list-header{display:flex;flex:none;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:10px 12px 10px 14px;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:grab;user-select:none;touch-action:none}
+.dprc-fab-list-header:active{cursor:grabbing}
+.dprc-fab-list-header[data-dragging="true"]{cursor:grabbing;background:var(--dsw-alias-interactive-bg-hover)}
+.dprc-fab-list-reset{flex:none;cursor:pointer;border:0;border-radius:6px;padding:2px 6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px}
+.dprc-fab-list-reset:hover,.dprc-fab-list-reset:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
 .dprc-fab-items{margin:0;padding:4px;list-style:none;overflow-y:auto}
 .dprc-fab-item{display:flex;width:100%;align-items:center;gap:10px;cursor:pointer;border:0;border-radius:10px;padding:8px 10px;background:transparent;color:inherit;font:inherit;text-align:left}
 .dprc-fab-item:hover,.dprc-fab-item:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
@@ -70,7 +81,7 @@ body[data-dsh-desktop-mode] .dprc-fab-layer{--dprc-fab-top:52px}
 .dprc-fab-item-heading{display:flex;min-width:0;align-items:center;gap:7px}
 .dprc-fab-item-title{overflow:hidden;color:var(--dsw-alias-label-primary);font-size:13px;font-weight:600;line-height:20px;text-overflow:ellipsis;white-space:nowrap}
 .dprc-fab-item-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:720px){.dprc-fab-layer{--dprc-fab-top:12px}.dprc-fab-list{width:min(320px,calc(100vw - 24px))}}
+@media(max-width:720px){.dprc-fab-list{width:min(320px,calc(100vw - 24px))}}
 `
 
 interface ContentBlock {
@@ -441,6 +452,86 @@ interface FloatingCardEntry {
   model: ResultCardViewModel
 }
 
+/** Persisted free-floating geometry of the quick finder or its list. */
+interface FloatingPosition {
+  left: number
+  top: number
+}
+
+/** Read a persisted viewport position without trusting stale or malformed storage. */
+function loadFloatingPosition(key: string): FloatingPosition | undefined {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(key) ?? '') as Partial<FloatingPosition>
+    if (typeof saved?.left !== 'number' || !Number.isFinite(saved.left)
+      || typeof saved.top !== 'number' || !Number.isFinite(saved.top)) return undefined
+    return { left: saved.left, top: saved.top }
+  } catch {
+    return undefined
+  }
+}
+
+/** Persist one viewport position, clamped inside the current viewport. */
+function saveFloatingPosition(key: string, position: FloatingPosition): void {
+  const clamped = {
+    left: Math.min(Math.max(position.left, 8), Math.max(window.innerWidth - 56, 8)),
+    top: Math.min(Math.max(position.top, 8), Math.max(window.innerHeight - 56, 8)),
+  }
+  window.localStorage.setItem(key, JSON.stringify(clamped))
+}
+
+/** Drop the persisted geometry so the surface returns to its anchored placement. */
+function clearFloatingPosition(key: string): void {
+  window.localStorage.removeItem(key)
+}
+
+/** Clamp a list position so its window stays reachable inside the viewport. */
+function clampListPosition(position: FloatingPosition, listWidth: number, listHeight: number): FloatingPosition {
+  return {
+    left: Math.min(Math.max(position.left, 8), Math.max(window.innerWidth - listWidth - 8, 8)),
+    top: Math.min(Math.max(position.top, 8), Math.max(window.innerHeight - Math.min(listHeight, window.innerHeight - 16) - 8, 8)),
+  }
+}
+
+/**
+ * Track the Session-log export capsule's viewport geometry — the quick finder
+ * anchors to its left edge. Polling covers layout shifts that neither
+ * ResizeObserver nor window resize reports (sidebar toggles repaint the
+ * header without resizing it).
+ */
+function useSessionLogAnchor(enabled: boolean): FloatingPosition | undefined {
+  const [anchor, setAnchor] = useState<FloatingPosition>()
+  useEffect(() => {
+    if (!enabled) return
+    /** Read the capsule's rect and mirror it into finder coordinates. */
+    const read = (): void => {
+      const capsule = document.querySelector<HTMLElement>(SESSION_LOG_BUTTON_SELECTOR)
+      if (capsule === null) {
+        setAnchor(undefined)
+        return
+      }
+      const rect = capsule.getBoundingClientRect()
+      if (rect.width === 0 && rect.height === 0) {
+        setAnchor(undefined)
+        return
+      }
+      setAnchor({ left: rect.left - 40 - FAB_ANCHOR_GAP, top: rect.top + (rect.height - 40) / 2 })
+    }
+    read()
+    const observer = new ResizeObserver(read)
+    if (document.querySelector(SESSION_LOG_BUTTON_SELECTOR) !== null) {
+      observer.observe(document.querySelector<HTMLElement>(SESSION_LOG_BUTTON_SELECTOR)!)
+    }
+    const interval = window.setInterval(read, FAB_ANCHOR_POLL_INTERVAL)
+    window.addEventListener('resize', read)
+    return () => {
+      observer.disconnect()
+      window.clearInterval(interval)
+      window.removeEventListener('resize', read)
+    }
+  }, [enabled])
+  return anchor
+}
+
 /** Session-keyed guard so repeated opens never duplicate the durable backfill fetch. */
 const backfillInFlight = new Set<string>()
 
@@ -487,7 +578,7 @@ async function backfillHostCards(sessionId: string): Promise<void> {
   }
 }
 
-/** Floating top-right quick finder listing every known result card of the current session. */
+/** Floating quick finder anchored left of the Session-log capsule, listing every known card. */
 function FloatingCardList(): JSX.Element | null {
   const registry = activeRegistry
   const sessionId = useCurrentSessionId()
@@ -495,6 +586,12 @@ function FloatingCardList(): JSX.Element | null {
   const [entries, setEntries] = useState<FloatingCardEntry[]>([])
   const [panelCallId, setPanelCallIdState] = useState<string>()
   const panelCallIdRef = useRef<string>()
+  /** Free position the user dragged the list to; undefined = pop up under the finder. */
+  const [freeList, setFreeList] = useState<FloatingPosition | undefined>(() => loadFloatingPosition(LIST_POSITION_STORAGE_KEY))
+  const [draggingList, setDraggingList] = useState(false)
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; baseLeft: number; baseTop: number }>()
+  const anchor = useSessionLogAnchor(true)
 
   /** Keep the ref aligned so panel-exclusivity listeners always read the live value. */
   const setPanelCallId = useCallback((callId: string | undefined) => {
@@ -546,6 +643,45 @@ function FloatingCardList(): JSX.Element | null {
     return () => window.removeEventListener(PANEL_OPEN_EVENT, closeForCardPanel)
   }, [setPanelCallId])
 
+  /** Start dragging the list from its header with pointer capture. */
+  const startListDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const list = listRef.current
+    if (list === null || event.button !== 0) return
+    const rect = list.getBoundingClientRect()
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseLeft: rect.left, baseTop: rect.top }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDraggingList(true)
+  }
+  /** Move the list freely within viewport-safe bounds while dragging. */
+  const moveListDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current
+    const list = listRef.current
+    if (drag === undefined || list === null || drag.pointerId !== event.pointerId) return
+    const rect = list.getBoundingClientRect()
+    const next = clampListPosition({ left: drag.baseLeft + event.clientX - drag.startX, top: drag.baseTop + event.clientY - drag.startY }, rect.width, rect.height)
+    list.style.left = `${next.left}px`
+    list.style.top = `${next.top}px`
+  }
+  /** Persist the final free position when the drag ends. */
+  const finishListDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current
+    const list = listRef.current
+    if (drag === undefined || list === null || drag.pointerId !== event.pointerId) return
+    dragRef.current = undefined
+    setDraggingList(false)
+    const rect = list.getBoundingClientRect()
+    const next = clampListPosition({ left: rect.left, top: rect.top }, rect.width, rect.height)
+    setFreeList(next)
+    saveFloatingPosition(LIST_POSITION_STORAGE_KEY, next)
+  }
+  /** Drop the persisted list geometry and pop the list back under the finder. */
+  const resetListPosition = (): void => {
+    dragRef.current = undefined
+    setDraggingList(false)
+    setFreeList(undefined)
+    clearFloatingPosition(LIST_POSITION_STORAGE_KEY)
+  }
+
   /** Open one card: sidebar first, then reveal the mounted row, else read in place. */
   const openCard = useCallback((entry: FloatingCardEntry): void => {
     setOpen(false)
@@ -565,12 +701,29 @@ function FloatingCardList(): JSX.Element | null {
   if (registry === undefined || sessionId === undefined || entries.length === 0) return null
 
   const panelRecord = panelCallId === undefined ? undefined : registry.get(sessionId, panelCallId)
+  const anchored = anchor !== undefined
+  const fabStyle = anchored
+    ? ({ '--dprc-fab-left': `${anchor.left}px`, '--dprc-fab-top': `${anchor.top}px`, '--dprc-fab-right': 'auto' } as CSSProperties)
+    : undefined
+  const listStyle = freeList !== undefined
+    ? ({ left: `${freeList.left}px`, top: `${freeList.top}px` } as CSSProperties)
+    : undefined
   return (
     <>
-      <div className="dprc-fab-layer" data-dprc-floating="">
+      <div className="dprc-fab-layer" data-dprc-floating="" data-anchored={anchored || undefined} style={fabStyle}>
         {open && (
-          <div className="dprc-fab-list" role="group" aria-label="结果卡片列表">
-            <div className="dprc-fab-list-header">结果卡片（{entries.length}）</div>
+          <div ref={listRef} className="dprc-fab-list" role="group" aria-label="结果卡片列表" style={listStyle}>
+            <div
+              className="dprc-fab-list-header"
+              data-dragging={draggingList || undefined}
+              onPointerDown={startListDrag}
+              onPointerMove={moveListDrag}
+              onPointerUp={finishListDrag}
+              onPointerCancel={finishListDrag}
+            >
+              <span>结果卡片（{entries.length}）</span>
+              {freeList !== undefined && <button type="button" className="dprc-fab-list-reset" aria-label="列表位置复位" title="复位列表位置" onClick={resetListPosition}>复位</button>}
+            </div>
             <ul className="dprc-fab-items">
               {entries.slice().reverse().map((entry) => (
                 <li key={entry.callId}>

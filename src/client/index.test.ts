@@ -49,4 +49,21 @@ describe('complete result presentation boundaries', () => {
     expect(source).toContain('fetch(CARDS_ROUTE')
     expect(source).toContain('registry.get(sessionId, card.callId) !== undefined) continue')
   })
+
+  it('anchors the finder to the left of the Session-log capsule with a safe fallback', async () => {
+    const source = await clientSource()
+    expect(source).toContain(String.raw`SESSION_LOG_BUTTON_SELECTOR = 'button[class*="sessionLogButton"]'`)
+    expect(source).toMatch(/function useSessionLogAnchor/u)
+    expect(source).toContain('rect.left - 40 - FAB_ANCHOR_GAP')
+    expect(source).toMatch(/data-anchored=\{anchored \|\| undefined\}/u)
+  })
+
+  it('lets the opened list drag freely and persist its position', async () => {
+    const source = await clientSource()
+    expect(source).toContain('LIST_POSITION_STORAGE_KEY')
+    expect(source).toMatch(/onPointerDown=\{startListDrag\}/u)
+    expect(source).toContain('setPointerCapture(event.pointerId)')
+    expect(source).toContain('saveFloatingPosition(LIST_POSITION_STORAGE_KEY, next)')
+    expect(source).toMatch(/复位列表位置/u)
+  })
 })
