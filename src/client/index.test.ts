@@ -52,7 +52,7 @@ describe('complete result presentation boundaries', () => {
 
   it('anchors the finder to the left of the Session-log capsule with a safe fallback', async () => {
     const source = await clientSource()
-    expect(source).toContain(String.raw`SESSION_LOG_BUTTON_SELECTOR = 'button[class*="sessionLogButton"]'`)
+    expect(source).toContain(String.raw`SESSION_LOG_BUTTON_SELECTOR = 'button[class*="moreButton"]'`)
     expect(source).toMatch(/function useSessionLogAnchor/u)
     expect(source).toContain('rect.left - 40 - FAB_ANCHOR_GAP')
     expect(source).toMatch(/data-anchored=\{anchored \|\| undefined\}/u)
