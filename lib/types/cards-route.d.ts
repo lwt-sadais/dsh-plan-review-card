@@ -1,10 +1,12 @@
 /**
- * Host half of the floating card finder: one fenced POST route replaying every
- * durable present_result_card call/result pair of a session from the session
- * store's event log, merged with a small live mirror that covers the gap after
- * a host restart (the store session stays frozen at its rehydration boundary,
- * so `session.events` misses everything appended since). Zero DSH writes —
- * the route only reads, and the browser-trust fence mirrors the /api gateway.
+ * Host half of the card finder: one fenced POST route replaying every durable
+ * present_result_card call/result pair of a session. History comes from the
+ * richest available store source (live-session event log, legacy events array,
+ * or the session-query service), merged with a small live mirror that covers
+ * sources that cannot replay pre-restart events. Traces merge by call identity
+ * and the route outputs cards in creation order with an ordinal seq. Zero DSH
+ * writes — the route only reads, and the browser-trust fence mirrors the /api
+ * gateway.
  */
 import { type ResultCardModel, type ReviewOutcome } from './contract.js';
 /** Structural face of one session-store event (the subset the parser reads). */
@@ -26,13 +28,24 @@ export interface CardsHttpResponse {
     writeHead(status: number, headers?: Record<string, string>): void;
     end(body?: string | Uint8Array): void;
 }
+/** One session-store face the route reads, across harness generations. */
+export interface CardStoreSession {
+    /** Legacy harness shape: a plain ordered events array. */
+    events?: readonly CardSessionEvent[] | undefined;
+    /** Current harness shape: the live session's full in-process event log. */
+    snapshotEvents?: (() => readonly CardSessionEvent[]) | undefined;
+}
 /** The structural service face the route needs (intersected at the call site). */
 export interface CardsRouteContext {
     sessions: {
-        get(id: string): {
-            events?: readonly CardSessionEvent[];
-        } | undefined;
+        get(id: string): CardStoreSession | undefined;
     };
+    /** Optional session-query service: the fallback for sessions not live in the store. */
+    sessionQuery?: {
+        readSession?: (sessionId: string) => Promise<{
+            events?: readonly CardSessionEvent[];
+        } | undefined>;
+    } | undefined;
     webServer: {
         register(route: {
             kind: 'exact' | 'prefix';
@@ -75,7 +88,19 @@ export declare function isLoopbackHostname(hostname: string): boolean;
 export declare function isTrustedCardRequest(request: CardsHttpRequest, trustedHosts: readonly string[]): boolean;
 /** Extract the present_result_card trace of one raw session event (undefined = unrelated). */
 export declare function traceOfEvent(event: CardSessionEvent): CardTrace | undefined;
-/** Pair call and result traces into durable card models, ordered by each card's first tool/call seq (oldest first). */
+/**
+ * Pair call and result traces into durable card models in input order — the
+ * caller owns creation ordering. Duplicate calls keep their first position,
+ * and `seq` becomes the output ordinal so clients get a monotonic creation
+ * key independent of any event-log seq scale.
+ */
 export declare function pairCardModels(traces: readonly CardTrace[]): DurableCard[];
+/**
+ * Merge the store log and the live mirror by call identity, creation order
+ * first. Store traces come first (their array order is the creation order);
+ * the mirror only fills calls the store source lacks — its results update an
+ * already-known card's model without reordering it.
+ */
+export declare function mergedTraces(store: readonly CardTrace[], mirror: readonly CardTrace[]): CardTrace[];
 /** Mount the fenced durable-cards route on the host webserver. */
 export declare function registerCardsRoute(host: CardsRouteContext): void;

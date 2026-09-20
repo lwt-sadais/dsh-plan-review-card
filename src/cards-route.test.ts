@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   isLoopbackHostname,
   isTrustedCardRequest,
+  mergedTraces,
   pairCardModels,
   registerCardsRoute,
   traceOfEvent,
@@ -41,11 +42,17 @@ function capturedHandler(ctx: CardsRouteContext & { registered: Array<Record<str
 }
 
 /** Build a fake host context with one session's events and a recording webserver. */
-function fakeHost(events: CardSessionEvent[]): CardsRouteContext & { registered: Array<Record<string, unknown>> } {
+function fakeHost(events: CardSessionEvent[], shape: 'legacy' | 'live' | 'query' = 'legacy'): CardsRouteContext & { registered: Array<Record<string, unknown>> } {
   const registered: Array<Record<string, unknown>> = []
+  const storeSession = shape === 'legacy'
+    ? { events }
+    : shape === 'live'
+      ? { snapshotEvents: () => events }
+      : {}
   return {
     registered,
-    sessions: { get: (id: string) => id === 'session-a' ? { events } : undefined },
+    sessions: { get: (id: string) => id === 'session-a' ? storeSession : undefined },
+    ...(shape === 'query' ? { sessionQuery: { readSession: async (id: string) => id === 'session-a' ? { events } : undefined } } : {}),
     webServer: {
       register: (route) => {
         registered.push(route as Record<string, unknown>)
@@ -86,20 +93,23 @@ describe('pairCardModels', () => {
     ]
     expect(pairCardModels(traces)).toEqual([{
       callId: 'call-1',
-      seq: 1,
+      seq: 0,
       model: { kind: 'evaluation', title: '评估', summary: '摘要', content: '# 全文', state: 'approved', status: '已批准' },
     }])
   })
 
-  it('orders cards by their first tool/call seq regardless of trace order', () => {
+  it('assigns creation ordinals in input order and dedupes repeat calls', () => {
     const cards = pairCardModels([
       traceOfEvent(callEvent(30, 'call-3', { kind: 'report', title: '三', summary: '', content: '三' }))!,
       traceOfEvent(callEvent(10, 'call-1', { kind: 'report', title: '一', summary: '', content: '一' }))!,
+      traceOfEvent(callEvent(30, 'call-3', { kind: 'report', title: '三重放', summary: '', content: '三' }))!,
       traceOfEvent(resultEvent(40, 'call-3', 'approved'))!,
       traceOfEvent(callEvent(20, 'call-2', { kind: 'report', title: '二', summary: '', content: '二' }))!,
     ])
-    expect(cards.map((card) => card.callId)).toEqual(['call-1', 'call-2', 'call-3'])
-    expect(cards.map((card) => card.seq)).toEqual([10, 20, 30])
+    expect(cards.map((card) => card.callId)).toEqual(['call-3', 'call-1', 'call-2'])
+    expect(cards.map((card) => card.seq)).toEqual([0, 1, 2])
+    expect(cards[0]?.model.title).toBe('三')
+    expect(cards[0]?.model.state).toBe('approved')
   })
 
   it('keeps unreviewed cards waiting and errors interrupted', () => {
@@ -127,6 +137,39 @@ describe('pairCardModels', () => {
       seq: 1, kind: 'call', callId: 'call-1', argsRaw: '{broken',
     }])
     expect(malformed[0]?.model.title).toBe('结构化结果')
+  })
+})
+
+describe('mergedTraces', () => {
+  const call = (callId: string): CardTrace => ({ seq: 0, kind: 'call', callId, argsRaw: '{}' })
+  const result = (callId: string, outcome?: string): CardTrace => ({
+    seq: 0, kind: 'result', callId, ...(outcome === undefined ? {} : { outcome: outcome as CardTrace['outcome'] }),
+  })
+
+  it('keeps store creation order and lets mirror results update without reordering', () => {
+    const merged = mergedTraces(
+      [call('a'), call('b'), result('a')],
+      [result('a', 'approved'), result('b', 'rejected')],
+    )
+    expect(merged.map((trace) => trace.callId)).toEqual(['a', 'b', 'a', 'a', 'b'])
+    const cards = pairCardModels(merged)
+    expect(cards.map((card) => card.callId)).toEqual(['a', 'b'])
+    expect(cards.map((card) => card.model.state)).toEqual(['approved', 'rejected'])
+  })
+
+  it('fills store gaps with mirror calls and drops orphan mirror results', () => {
+    const merged = mergedTraces(
+      [call('a')],
+      [result('ghost'), call('c'), result('c', 'approved')],
+    )
+    expect(merged.map((trace) => `${trace.kind}:${trace.callId}`)).toEqual(['call:a', 'call:c', 'result:c'])
+    expect(pairCardModels(merged).map((card) => card.seq)).toEqual([0, 1])
+  })
+
+  it('dedupes mirror calls already present in the store', () => {
+    const merged = mergedTraces([call('a'), result('a')], [call('a'), result('a', 'rejected')])
+    expect(merged).toHaveLength(3)
+    expect(pairCardModels(merged)[0]?.model.state).toBe('rejected')
   })
 })
 
@@ -189,7 +232,36 @@ describe('registerCardsRoute', () => {
     } as CardsHttpRequest, response as CardsHttpResponse)
     expect(response.writeHead).toHaveBeenCalledWith(200, expect.anything())
     const body = JSON.parse(chunks[0] ?? '{}') as { cards?: Array<{ callId: string; seq: number; model: { state: string } }> }
-    expect(body.cards).toEqual([{ callId: 'call-1', seq: 1, model: expect.objectContaining({ state: 'adjustment-requested', status: '需调整' }) }])
+    expect(body.cards).toEqual([{ callId: 'call-1', seq: 0, model: expect.objectContaining({ state: 'adjustment-requested', status: '需调整' }) }])
+  })
+
+  it('replays history through the live snapshotEvents and sessionQuery sources', async () => {
+    const events = [
+      callEvent(1, 'call-1', { kind: 'report', title: '一', summary: '', content: '一' }),
+      callEvent(2, 'call-2', { kind: 'report', title: '二', summary: '', content: '二' }),
+    ]
+    const run = async (shape: 'live' | 'query'): Promise<Array<{ callId: string; seq: number }>> => {
+      const host = fakeHost(events, shape)
+      const handler = capturedHandler(host)
+      const chunks: string[] = []
+      await handler({
+        method: 'POST',
+        url: '/plan-review-card/api/cards',
+        headers: { host: '127.0.0.1:43120' },
+        [Symbol.asyncIterator]() {
+          let done = false
+          return { next: async () => { if (done) return { done: true, value: undefined }; done = true; return { done: false, value: JSON.stringify({ sessionId: 'session-a' }) } } }
+        },
+      } as CardsHttpRequest, {
+        statusCode: 0,
+        writeHead: vi.fn(),
+        end: vi.fn((body?: string | Uint8Array) => { if (typeof body === 'string') chunks.push(body) }),
+      } as unknown as CardsHttpResponse)
+      const body = JSON.parse(chunks[0] ?? '{}') as { cards?: Array<{ callId: string; seq: number }> }
+      return (body.cards ?? []).map((card) => ({ callId: card.callId, seq: card.seq }))
+    }
+    expect(await run('live')).toEqual([{ callId: 'call-1', seq: 0 }, { callId: 'call-2', seq: 1 }])
+    expect(await run('query')).toEqual([{ callId: 'call-1', seq: 0 }, { callId: 'call-2', seq: 1 }])
   })
 
   it('refuses unknown sessions and malformed payloads', async () => {

@@ -1,10 +1,12 @@
 /**
- * Host half of the floating card finder: one fenced POST route replaying every
- * durable present_result_card call/result pair of a session from the session
- * store's event log, merged with a small live mirror that covers the gap after
- * a host restart (the store session stays frozen at its rehydration boundary,
- * so `session.events` misses everything appended since). Zero DSH writes —
- * the route only reads, and the browser-trust fence mirrors the /api gateway.
+ * Host half of the card finder: one fenced POST route replaying every durable
+ * present_result_card call/result pair of a session. History comes from the
+ * richest available store source (live-session event log, legacy events array,
+ * or the session-query service), merged with a small live mirror that covers
+ * sources that cannot replay pre-restart events. Traces merge by call identity
+ * and the route outputs cards in creation order with an ordinal seq. Zero DSH
+ * writes — the route only reads, and the browser-trust fence mirrors the /api
+ * gateway.
  */
 import {
   FALLBACK_CARD_TITLE,
@@ -46,11 +48,23 @@ export interface CardsHttpResponse {
   end(body?: string | Uint8Array): void
 }
 
+/** One session-store face the route reads, across harness generations. */
+export interface CardStoreSession {
+  /** Legacy harness shape: a plain ordered events array. */
+  events?: readonly CardSessionEvent[] | undefined
+  /** Current harness shape: the live session's full in-process event log. */
+  snapshotEvents?: (() => readonly CardSessionEvent[]) | undefined
+}
+
 /** The structural service face the route needs (intersected at the call site). */
 export interface CardsRouteContext {
   sessions: {
-    get(id: string): { events?: readonly CardSessionEvent[] } | undefined
+    get(id: string): CardStoreSession | undefined
   }
+  /** Optional session-query service: the fallback for sessions not live in the store. */
+  sessionQuery?: {
+    readSession?: (sessionId: string) => Promise<{ events?: readonly CardSessionEvent[] } | undefined>
+  } | undefined
   webServer: {
     register(route: {
       kind: 'exact' | 'prefix'
@@ -198,14 +212,20 @@ function parseCallArgs(raw: string | undefined): ResultCardArgs {
   }
 }
 
-/** Pair call and result traces into durable card models, ordered by each card's first tool/call seq (oldest first). */
+/**
+ * Pair call and result traces into durable card models in input order — the
+ * caller owns creation ordering. Duplicate calls keep their first position,
+ * and `seq` becomes the output ordinal so clients get a monotonic creation
+ * key independent of any event-log seq scale.
+ */
 export function pairCardModels(traces: readonly CardTrace[]): DurableCard[] {
   const cards = new Map<string, DurableCard>()
-  for (const trace of [...traces].sort((left, right) => left.seq - right.seq)) {
+  for (const trace of traces) {
     if (trace.kind === 'call') {
+      if (cards.has(trace.callId)) continue
       cards.set(trace.callId, {
         callId: trace.callId,
-        seq: trace.seq,
+        seq: cards.size,
         model: { ...parseCallArgs(trace.argsRaw), state: 'waiting', status: WAITING_STATUS },
       })
       continue
@@ -258,15 +278,60 @@ function createCardMirror(ctx: CardsRouteContext): { entries(sessionId: string):
   return { entries: sessionId => perSession.get(sessionId) ?? [] }
 }
 
-/** Merge the store log and the live mirror, deduped by seq, oldest first. */
-function mergedTraces(ctx: CardsRouteContext, sessionId: string, mirror: { entries(sessionId: string): CardTrace[] }): CardTrace[] {
-  const bySeq = new Map<number, CardTrace>()
-  for (const event of ctx.sessions.get(sessionId)?.events ?? []) {
-    const trace = traceOfEvent(event)
-    if (trace !== undefined) bySeq.set(trace.seq, trace)
+/**
+ * Load the durable card traces of one session in creation order from the
+ * richest available store source: the live session's full in-process event
+ * log (covers resumed history), the legacy events array, or the session-query
+ * service for sessions that are not live. Unexpected source shapes degrade to
+ * an empty list so the mirror remains the fallback.
+ */
+async function storeTraces(ctx: CardsRouteContext, sessionId: string): Promise<CardTrace[]> {
+  try {
+    const session = ctx.sessions.get(sessionId)
+    const events = session?.snapshotEvents?.() ?? session?.events ?? await readSessionEvents(ctx, sessionId)
+    const traces: CardTrace[] = []
+    for (const event of events) {
+      const trace = traceOfEvent(event)
+      if (trace !== undefined) traces.push(trace)
+    }
+    return traces
+  } catch {
+    return []
   }
-  for (const trace of mirror.entries(sessionId)) bySeq.set(trace.seq, trace)
-  return [...bySeq.values()].sort((left, right) => left.seq - right.seq)
+}
+
+/** Read one complete session log through the optional session-query service. */
+async function readSessionEvents(ctx: CardsRouteContext, sessionId: string): Promise<readonly CardSessionEvent[]> {
+  const query = ctx.sessionQuery
+  if (typeof query?.readSession !== 'function') return []
+  try {
+    const loaded = await query.readSession(sessionId)
+    return loaded?.events ?? []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Merge the store log and the live mirror by call identity, creation order
+ * first. Store traces come first (their array order is the creation order);
+ * the mirror only fills calls the store source lacks — its results update an
+ * already-known card's model without reordering it.
+ */
+export function mergedTraces(store: readonly CardTrace[], mirror: readonly CardTrace[]): CardTrace[] {
+  const seenCalls = new Set<string>()
+  const merged: CardTrace[] = []
+  for (const trace of [...store, ...mirror]) {
+    if (trace.kind === 'call') {
+      if (seenCalls.has(trace.callId)) continue
+      seenCalls.add(trace.callId)
+    } else if (!seenCalls.has(trace.callId)) {
+      // Never let a result without a known call identity create or reorder cards.
+      continue
+    }
+    merged.push(trace)
+  }
+  return merged
 }
 
 /** Collect one JSON body from the async request iterator. */
@@ -320,7 +385,8 @@ export function registerCardsRoute(host: CardsRouteContext): void {
         const payload = await readJsonBody(request)
         const sessionId = payload.sessionId
         if (typeof sessionId !== 'string' || sessionId === '') throw new Error('sessionId is required')
-        writeJson(response, 200, { ok: true, cards: pairCardModels(mergedTraces(host, sessionId, mirror)) })
+        const store = await storeTraces(host, sessionId)
+        writeJson(response, 200, { ok: true, cards: pairCardModels(mergedTraces(store, mirror.entries(sessionId))) })
       } catch (error) {
         writeJson(response, 400, {
           ok: false,
