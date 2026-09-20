@@ -16,7 +16,7 @@
 - 要求调整后，模型读取批注、生成完整新版本并再次提交卡片。
 - 历史卡片来自持久化的 `tool/call` 与 `tool/result`，刷新或恢复会话后仍可显示；侧边栏 Tab 仅持久化 `callId`，完整 Markdown 不会重复写入 localStorage。
 - 仅主 Agent 可使用结果卡片；子 Agent 不加载该工具及其触发提示，避免并发任务要求用户逐个审批。
-- 使用 DSH 官方 Bundle、Tool、User Questions 与 Client Slot 扩展点，不修改 DSH Desktop 源码。
+- 使用 DSH 官方 Bundle、Tool、User Questions、Client Slot 与 Host WebServer 扩展点，不修改 DSH Desktop 源码。
 
 ## 工作方式
 
@@ -37,10 +37,10 @@
 
 ## 安装到 DSH Desktop
 
-从 GitHub 安装到 Desktop Profile：
+从 GitHub 安装到 Desktop Profile（锚定当前版本提交，升级时同步更新）：
 
 ```bash
-dsh plugin add --profile desktop github:lwt-sadais/dsh-plan-review-card
+dsh plugin add --profile desktop github:lwt-sadais/dsh-plan-review-card#6250c6bf1a9f27a314708d4435d1dcf9c77e169c
 ```
 
 本地开发安装：
@@ -51,7 +51,9 @@ dsh plugin add --profile desktop D:\\workspace\\dsh-plan-review-card
 
 插件包声明了 `dsh.bundle`，安装命令会同时把它加入 Desktop Profile 的 Bundle 列表。首次安装后请完全退出并重新启动 DSH Desktop。
 
-更新：
+更新（锚定安装）：重复执行上方的锚定安装命令并替换为新版本提交哈希，插件会原地升级。
+
+更新（未锚定安装）：
 
 ```bash
 dsh plugin update --profile desktop dsh-plan-review-card
@@ -90,7 +92,7 @@ pnpm run check
 
 ## 兼容性
 
-兼容 DeepSeek Harness `0.1.1-rc.1` 至当前 `0.1.x` 的 Bundle、Tool、User Questions、Client Slot 与 Tool View 契约；当前开发与构建基线为 `0.1.1-rc.2`。
+兼容 DeepSeek Harness `0.1.2-rc.1` 及以上的 Bundle、Tool、User Questions、Client Slot、Tool View 与 Host WebServer 契约；当前开发与构建基线为 `0.1.2-rc.1`，并已在 `0.1.5-rc.2` 运行时（Desktop 2.0.x）验证会话历史回放与输入框工具栏插槽。
 
 ## 许可证
 
