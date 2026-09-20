@@ -1,32 +1,13 @@
 import { type SidebarContext } from './sidebar-bridge.js';
-interface ContentBlock {
-    type: string;
-    text?: string;
-}
-interface RunningToolBlock {
-    callId: string;
-    argsRaw?: string;
-}
-interface SettledToolBlock {
-    callId: string;
-    kind: string;
-    isError?: boolean;
-    content: ContentBlock[];
-    call?: {
-        argsRaw?: string;
-    };
-}
-type ToolBlock = RunningToolBlock | SettledToolBlock;
-interface ToolRowProps {
-    block: ToolBlock;
-    inspect?: () => void;
-}
+/** Slot registry face used by the plugin: keyed tool views plus list-slot dock entries. */
 interface SlotRegistry {
     inject(name: string, factory: () => unknown): void;
-    register(options: {
+    register<P>(options: {
         name: string;
-        key: string;
-    }, component: (props: ToolRowProps) => JSX.Element): unknown;
+        key?: string;
+        id?: string;
+        order?: number;
+    }, component: (props: P) => JSX.Element | null): unknown;
 }
 interface ClientContext extends SidebarContext {
     slots: SlotRegistry;
@@ -40,7 +21,7 @@ interface ClientContext extends SidebarContext {
     };
     effect(callback: () => () => void, label: string): () => void;
 }
-/** Register the keyed card renderer and optional unified-sidebar result page. */
+/** Register the keyed card renderer, the composer toolbar entry, and the optional unified-sidebar result page. */
 export declare function apply(ctx: ClientContext): void;
 export declare const inject: string[];
 export {};

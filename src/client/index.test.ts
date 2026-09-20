@@ -28,12 +28,12 @@ describe('complete result presentation boundaries', () => {
     expect(bridge).not.toContain('meta: { callId, content')
   })
 
-  it('mounts a body-level floating quick finder owned by the plugin lifecycle', async () => {
+  it('registers the card finder in the composer input toolbar after the resident dock entries', async () => {
     const source = await clientSource()
-    expect(source).toMatch(/function FloatingCardList/u)
-    expect(source).toContain('createRoot(host)')
-    expect(source).toContain('host.dataset.dprcFloatingHost')
-    expect(source).toContain('root.render(<FloatingCardList />)')
+    expect(source).toContain("ctx.slots.inject('conversation.input.left'")
+    expect(source).toContain("id: 'plan-review-card'")
+    expect(source).toContain('order: 4')
+    expect(source).toContain('function CardsDock')
   })
 
   it('opens finder cards through the sidebar, mounted-row reveal, or embedded panel', async () => {
@@ -59,12 +59,12 @@ describe('complete result presentation boundaries', () => {
     expect(source).toContain('onClick={toggleList}')
   })
 
-  it('anchors the finder to the left of the Session-log capsule with a safe fallback', async () => {
+  it('pops the finder list above the toolbar button and keeps outside-press closing', async () => {
     const source = await clientSource()
-    expect(source).toContain(String.raw`SESSION_LOG_BUTTON_SELECTOR = 'button[class*="moreButton"]'`)
-    expect(source).toMatch(/function useSessionLogAnchor/u)
-    expect(source).toContain('rect.left - 40 - FAB_ANCHOR_GAP')
-    expect(source).toMatch(/data-anchored=\{anchored \|\| undefined\}/u)
+    expect(source).toContain('function clampFinderLeft')
+    expect(source).toMatch(/transform: 'translateY\(-100%\)'/u)
+    expect(source).toContain('data-dprc-floating=""')
+    expect(source).toContain('buttonRef.current?.getBoundingClientRect()')
   })
 
   it('lets the opened list drag freely and persist its position', async () => {

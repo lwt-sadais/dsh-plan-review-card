@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { createRoot } from 'react-dom/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   FALLBACK_CARD_TITLE,
@@ -40,12 +42,8 @@ const PANEL_OPEN_EVENT = 'dsh-plan-review-card:open-panel'
 const REMOTE_OPEN_EVENT = 'dsh-plan-review-card:remote-open'
 const CARDS_ROUTE = '/plan-review-card/api/cards'
 const LIST_POSITION_STORAGE_KEY = 'dsh-plan-review-card:list-position'
-/** The official header "more" icon button hosting the session-log entry (CSS Modules hash prefix may drift; match the stable suffix). */
-const SESSION_LOG_BUTTON_SELECTOR = 'button[class*="moreButton"]'
-/** Horizontal gap between the quick finder and the Session-log capsule when anchored. */
-const FAB_ANCHOR_GAP = 8
-/** Fallback interval for re-reading the anchored capsule's geometry. */
-const FAB_ANCHOR_POLL_INTERVAL = 600
+/** Fixed width of the finder dropdown, shared by the stylesheet and the viewport clamp. */
+const FINDER_WIDTH = 320
 const STYLE_TEXT = `
 .dprc-card{margin:4px 16px;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-specific-tip);color:var(--dsw-alias-label-primary)}
 .dprc-card[data-state="waiting"]{border-color:var(--dsw-alias-state-warn-secondary)}
@@ -63,25 +61,24 @@ const STYLE_TEXT = `
 .dprc-markdown{min-height:0;flex:1;padding:20px 24px;overflow:auto;font-size:14px;line-height:24px}.dprc-actions{display:flex;flex:none;justify-content:flex-end;gap:8px;border-top:1px solid var(--dsw-alias-border-l1);padding:12px 16px}.dprc-button{min-height:36px;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:9px;padding:6px 12px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}.dprc-button-primary{border-color:transparent;background:var(--dsw-alias-state-business-primary);color:white}.dprc-button:hover{filter:brightness(.96)}
 .dprc-sidebar{display:flex;width:100%;height:100%;min-height:0;flex-direction:column;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary)}.dprc-sidebar-header{display:flex;flex:none;align-items:center;gap:10px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:12px 14px}.dprc-sidebar-empty{display:grid;min-height:180px;place-items:center;padding:24px;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:22px;text-align:center}
 @keyframes dprc-slide-in{from{transform:translateX(24px);opacity:.72}to{transform:translateX(0);opacity:1}}@media(max-width:720px){.dprc-summary{display:none}.dprc-status{max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dprc-panel-layer{left:0}.dprc-panel{width:100%;border-left:0}.dprc-resize-handle{display:none}.dprc-panel-header{padding-top:max(12px,env(safe-area-inset-top))}.dprc-markdown{padding:16px}.dprc-actions{flex-wrap:wrap;padding-bottom:max(12px,env(safe-area-inset-bottom))}.dprc-button-primary{width:100%}}@media(prefers-reduced-motion:reduce){.dprc-panel{animation:none}}
-.dprc-fab-layer{position:fixed;z-index:26;left:var(--dprc-fab-left,auto);top:var(--dprc-fab-top,60px);right:var(--dprc-fab-right,12px);display:flex;flex-direction:column;align-items:flex-end;gap:8px}
-.dprc-fab-layer[data-anchored="true"]{right:auto}
-.dprc-fab{position:relative;display:grid;width:40px;height:40px;place-items:center;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:16px;box-shadow:0 4px 16px rgba(0,0,0,.12)}
-.dprc-fab:hover,.dprc-fab:focus-visible{filter:brightness(.96);outline:none}
-.dprc-fab-badge{position:absolute;top:-6px;right:-6px;min-width:18px;padding:0 5px;border-radius:999px;background:var(--dsw-alias-state-business-primary);color:#fff;font-size:11px;line-height:18px;text-align:center}
-.dprc-fab-list{position:fixed;width:320px;max-height:min(60vh,480px);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 8px 28px rgba(0,0,0,.16)}
-.dprc-fab-list-header{display:flex;flex:none;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:10px 12px 10px 14px;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:grab;user-select:none;touch-action:none}
-.dprc-fab-list-header:active{cursor:grabbing}
-.dprc-fab-list-header[data-dragging="true"]{cursor:grabbing;background:var(--dsw-alias-interactive-bg-hover)}
-.dprc-fab-list-reset{flex:none;cursor:pointer;border:0;border-radius:6px;padding:2px 6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px}
-.dprc-fab-list-reset:hover,.dprc-fab-list-reset:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
-.dprc-fab-items{margin:0;padding:4px;list-style:none;overflow-y:auto}
-.dprc-fab-item{display:flex;width:100%;align-items:center;gap:10px;cursor:pointer;border:0;border-radius:10px;padding:8px 10px;background:transparent;color:inherit;font:inherit;text-align:left}
-.dprc-fab-item:hover,.dprc-fab-item:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
-.dprc-fab-item-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px}
-.dprc-fab-item-heading{display:flex;min-width:0;align-items:center;gap:7px}
-.dprc-fab-item-title{overflow:hidden;color:var(--dsw-alias-label-primary);font-size:13px;font-weight:600;line-height:20px;text-overflow:ellipsis;white-space:nowrap}
-.dprc-fab-item-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:720px){.dprc-fab-list{width:min(320px,calc(100vw - 24px))}}
+.dprc-dock-button{display:inline-flex;flex:none;align-items:center;gap:6px;height:32px;cursor:pointer;border:0;border-radius:8px;background:transparent;padding:0 8px;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px}
+.dprc-dock-button:hover,.dprc-dock-button:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
+.dprc-dock-button[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dprc-dock-count{min-width:16px;padding:0 4px;border-radius:999px;background:var(--dsw-alias-state-business-primary);color:#fff;font-size:10px;line-height:16px;text-align:center}
+.dprc-finder-list{position:fixed;z-index:26;width:${FINDER_WIDTH}px;max-height:min(60vh,480px);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.dprc-finder-list-header{display:flex;flex:none;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid var(--dsw-alias-border-l1);padding:10px 12px 10px 14px;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:grab;user-select:none;touch-action:none}
+.dprc-finder-list-header:active{cursor:grabbing}
+.dprc-finder-list-header[data-dragging="true"]{cursor:grabbing;background:var(--dsw-alias-interactive-bg-hover)}
+.dprc-finder-list-reset{flex:none;cursor:pointer;border:0;border-radius:6px;padding:2px 6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:11px}
+.dprc-finder-list-reset:hover,.dprc-finder-list-reset:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
+.dprc-finder-items{margin:0;padding:4px;list-style:none;overflow-y:auto}
+.dprc-finder-item{display:flex;width:100%;align-items:center;gap:10px;cursor:pointer;border:0;border-radius:10px;padding:8px 10px;background:transparent;color:inherit;font:inherit;text-align:left}
+.dprc-finder-item:hover,.dprc-finder-item:focus-visible{background:var(--dsw-alias-interactive-bg-hover);outline:none}
+.dprc-finder-item-copy{display:flex;min-width:0;flex:1;flex-direction:column;gap:2px}
+.dprc-finder-item-heading{display:flex;min-width:0;align-items:center;gap:7px}
+.dprc-finder-item-title{overflow:hidden;color:var(--dsw-alias-label-primary);font-size:13px;font-weight:600;line-height:20px;text-overflow:ellipsis;white-space:nowrap}
+.dprc-finder-item-summary{overflow:hidden;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:720px){.dprc-finder-list{width:min(${FINDER_WIDTH}px,calc(100vw - 24px))}}
 `
 
 interface ContentBlock {
@@ -109,9 +106,10 @@ interface ToolRowProps {
   inspect?: () => void
 }
 
+/** Slot registry face used by the plugin: keyed tool views plus list-slot dock entries. */
 interface SlotRegistry {
   inject(name: string, factory: () => unknown): void
-  register(options: { name: string; key: string }, component: (props: ToolRowProps) => JSX.Element): unknown
+  register<P>(options: { name: string; key?: string; id?: string; order?: number }, component: (props: P) => JSX.Element | null): unknown
 }
 
 interface ClientContext extends SidebarContext {
@@ -494,44 +492,9 @@ function clampListPosition(position: FloatingPosition, listWidth: number, listHe
   }
 }
 
-/**
- * Track the Session-log export capsule's viewport geometry — the quick finder
- * anchors to its left edge. Polling covers layout shifts that neither
- * ResizeObserver nor window resize reports (sidebar toggles repaint the
- * header without resizing it).
- */
-function useSessionLogAnchor(enabled: boolean): FloatingPosition | undefined {
-  const [anchor, setAnchor] = useState<FloatingPosition>()
-  useEffect(() => {
-    if (!enabled) return
-    /** Read the capsule's rect and mirror it into finder coordinates. */
-    const read = (): void => {
-      const capsule = document.querySelector<HTMLElement>(SESSION_LOG_BUTTON_SELECTOR)
-      if (capsule === null) {
-        setAnchor(undefined)
-        return
-      }
-      const rect = capsule.getBoundingClientRect()
-      if (rect.width === 0 && rect.height === 0) {
-        setAnchor(undefined)
-        return
-      }
-      setAnchor({ left: rect.left - 40 - FAB_ANCHOR_GAP, top: rect.top + (rect.height - 40) / 2 })
-    }
-    read()
-    const observer = new ResizeObserver(read)
-    if (document.querySelector(SESSION_LOG_BUTTON_SELECTOR) !== null) {
-      observer.observe(document.querySelector<HTMLElement>(SESSION_LOG_BUTTON_SELECTOR)!)
-    }
-    const interval = window.setInterval(read, FAB_ANCHOR_POLL_INTERVAL)
-    window.addEventListener('resize', read)
-    return () => {
-      observer.disconnect()
-      window.clearInterval(interval)
-      window.removeEventListener('resize', read)
-    }
-  }, [enabled])
-  return anchor
+/** Clamp the anchored finder's left edge so its fixed-width window stays inside the viewport. */
+function clampFinderLeft(left: number): number {
+  return Math.min(Math.max(left, 8), Math.max(window.innerWidth - FINDER_WIDTH - 8, 8))
 }
 
 /** Session-keyed guard so repeated opens never duplicate the durable backfill fetch. */
@@ -589,20 +552,25 @@ async function backfillHostCards(sessionId: string): Promise<void> {
   }
 }
 
-/** Floating quick finder anchored left of the Session-log capsule, listing every known card newest-first by durable call-event seq. */
-function FloatingCardList(): JSX.Element | null {
+/** Props the host composer toolbar shares with dock entries. */
+type CardsDockProps = PropsRuntime<'conversation.input.left'>
+
+/** Composer toolbar entry listing every known card of the session, newest-first by durable call-event seq. */
+function CardsDock(_props: CardsDockProps): JSX.Element | null {
   const registry = activeRegistry
   const sessionId = useCurrentSessionId()
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<FloatingCardEntry[]>([])
   const [panelCallId, setPanelCallIdState] = useState<string>()
   const panelCallIdRef = useRef<string>()
-  /** Free position the user dragged the list to; undefined = pop up under the finder. */
+  /** Free position the user dragged the list to; undefined = pop up above the toolbar button. */
   const [freeList, setFreeList] = useState<FloatingPosition | undefined>(() => loadFloatingPosition(LIST_POSITION_STORAGE_KEY))
   const [draggingList, setDraggingList] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; baseLeft: number; baseTop: number }>()
-  const anchor = useSessionLogAnchor(true)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  /** Viewport position of the toolbar button captured when the list opened. */
+  const [buttonRect, setButtonRect] = useState<FloatingPosition>()
 
   /** Keep the ref aligned so panel-exclusivity listeners always read the live value. */
   const setPanelCallId = useCallback((callId: string | undefined) => {
@@ -657,6 +625,11 @@ function FloatingCardList(): JSX.Element | null {
   }, [open])
 
   useEffect(() => {
+    /** A session switch invalidates the open list's contents, so close it. */
+    setOpen(false)
+  }, [sessionId])
+
+  useEffect(() => {
     /** Card-row panels outrank the finder panel: close when any other panel opens. */
     const closeForCardPanel = (event: Event): void => {
       if ((event as CustomEvent<string>).detail !== panelCallIdRef.current) setPanelCallId(undefined)
@@ -696,7 +669,7 @@ function FloatingCardList(): JSX.Element | null {
     setFreeList(next)
     saveFloatingPosition(LIST_POSITION_STORAGE_KEY, next)
   }
-  /** Drop the persisted list geometry and pop the list back under the finder. */
+  /** Drop the persisted list geometry and pop the list back above the toolbar button. */
   const resetListPosition = (): void => {
     dragRef.current = undefined
     setDraggingList(false)
@@ -720,11 +693,14 @@ function FloatingCardList(): JSX.Element | null {
     setPanelCallId(entry.callId)
   }, [sessionId, setPanelCallId])
 
-  /** Open the list and retry a pending seq backfill right before the user reads it. */
+  /** Open the list above the toolbar button and retry a pending seq backfill right before the user reads it. */
   const toggleList = (): void => {
     const next = !open
     setOpen(next)
-    if (next && sessionId !== undefined && entries.some((entry) => entry.callSeq === undefined)) {
+    if (!next) return
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (rect !== undefined) setButtonRect({ left: rect.left, top: rect.top })
+    if (sessionId !== undefined && entries.some((entry) => entry.callSeq === undefined)) {
       void backfillHostCards(sessionId)
     }
   }
@@ -732,52 +708,51 @@ function FloatingCardList(): JSX.Element | null {
   if (registry === undefined || sessionId === undefined || entries.length === 0) return null
 
   const panelRecord = panelCallId === undefined ? undefined : registry.get(sessionId, panelCallId)
-  const anchored = anchor !== undefined
-  const fabStyle = anchored
-    ? ({ '--dprc-fab-left': `${anchor.left}px`, '--dprc-fab-top': `${anchor.top}px`, '--dprc-fab-right': 'auto' } as CSSProperties)
-    : undefined
   const listStyle = freeList !== undefined
     ? ({ left: `${freeList.left}px`, top: `${freeList.top}px` } as CSSProperties)
-    : undefined
+    : buttonRect !== undefined
+      ? ({ left: `${clampFinderLeft(buttonRect.left)}px`, top: `${buttonRect.top - 8}px`, transform: 'translateY(-100%)' } as CSSProperties)
+      : undefined
   return (
     <>
-      <div className="dprc-fab-layer" data-dprc-floating="" data-anchored={anchored || undefined} style={fabStyle}>
-        {open && (
-          <div ref={listRef} className="dprc-fab-list" role="group" aria-label="结果卡片列表" style={listStyle}>
-            <div
-              className="dprc-fab-list-header"
-              data-dragging={draggingList || undefined}
-              onPointerDown={startListDrag}
-              onPointerMove={moveListDrag}
-              onPointerUp={finishListDrag}
-              onPointerCancel={finishListDrag}
-            >
-              <span>结果卡片（{entries.length}）</span>
-              {freeList !== undefined && <button type="button" className="dprc-fab-list-reset" aria-label="列表位置复位" title="复位列表位置" onClick={resetListPosition}>复位</button>}
-            </div>
-            <ul className="dprc-fab-items">
-              {entries.slice().reverse().map((entry) => (
-                <li key={entry.callId}>
-                  <button type="button" className="dprc-fab-item" data-state={entry.model.state} onClick={() => openCard(entry)}>
-                    <span className="dprc-icon" aria-hidden="true">▤</span>
-                    <span className="dprc-fab-item-copy">
-                      <span className="dprc-fab-item-heading">
-                        <span className="dprc-kind">{RESULT_KIND_LABELS[entry.model.kind]}</span>
-                        <span className="dprc-fab-item-title">{entry.model.title}</span>
-                      </span>
-                      <span className="dprc-fab-item-summary">{entry.model.summary || '点击查看完整内容'}</span>
-                    </span>
-                    <span className="dprc-status">{entry.model.status}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+      <button ref={buttonRef} type="button" className="dprc-dock-button" data-dprc-floating="" aria-label="结果卡片列表" aria-expanded={open} onClick={toggleList}>
+        <span aria-hidden="true">▤</span>
+        <span>结果卡片</span>
+        <span className="dprc-dock-count">{entries.length}</span>
+      </button>
+      {open && createPortal(
+        <div ref={listRef} className="dprc-finder-list" role="group" aria-label="结果卡片列表" data-dprc-floating="" style={listStyle}>
+          <div
+            className="dprc-finder-list-header"
+            data-dragging={draggingList || undefined}
+            onPointerDown={startListDrag}
+            onPointerMove={moveListDrag}
+            onPointerUp={finishListDrag}
+            onPointerCancel={finishListDrag}
+          >
+            <span>结果卡片（{entries.length}）</span>
+            {freeList !== undefined && <button type="button" className="dprc-finder-list-reset" aria-label="列表位置复位" title="复位列表位置" onClick={resetListPosition}>复位</button>}
           </div>
-        )}
-        <button type="button" className="dprc-fab" aria-label="结果卡片列表" aria-expanded={open} onClick={toggleList}>
-          ▤{entries.length > 0 && <span className="dprc-fab-badge">{entries.length}</span>}
-        </button>
-      </div>
+          <ul className="dprc-finder-items">
+            {entries.slice().reverse().map((entry) => (
+              <li key={entry.callId}>
+                <button type="button" className="dprc-finder-item" data-state={entry.model.state} onClick={() => openCard(entry)}>
+                  <span className="dprc-icon" aria-hidden="true">▤</span>
+                  <span className="dprc-finder-item-copy">
+                    <span className="dprc-finder-item-heading">
+                      <span className="dprc-kind">{RESULT_KIND_LABELS[entry.model.kind]}</span>
+                      <span className="dprc-finder-item-title">{entry.model.title}</span>
+                    </span>
+                    <span className="dprc-finder-item-summary">{entry.model.summary || '点击查看完整内容'}</span>
+                  </span>
+                  <span className="dprc-status">{entry.model.status}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>,
+        document.body,
+      )}
       {panelCallId !== undefined && panelRecord !== undefined && createPortal(
         <ResultPanel
           model={panelRecord.model}
@@ -791,26 +766,20 @@ function FloatingCardList(): JSX.Element | null {
   )
 }
 
-/** Register the keyed card renderer and optional unified-sidebar result page. */
+/** Register the keyed card renderer, the composer toolbar entry, and the optional unified-sidebar result page. */
 export function apply(ctx: ClientContext): void {
   const registry = new ResultCardRegistry()
   activeContext = ctx
   activeRegistry = registry
   registerResultSidebar(ctx, ResultCardSidebarView)
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: RESULT_CARD_TOOL }, ResultCard))
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left',
+    id: 'plan-review-card',
+    // 内置工具行占 0/1（附件、麦克风），git-diff=2、git-history=3，本入口排其后。
+    order: 4,
+  }, CardsDock))
   ctx.effect(installStyle, 'dsh-plan-review-card: stylesheet')
-  ctx.effect(() => {
-    /** Mount the floating quick finder on a body-level host the plugin lifecycle owns. */
-    const host = document.createElement('div')
-    host.dataset.dprcFloatingHost = ''
-    document.body.appendChild(host)
-    const root = createRoot(host)
-    root.render(<FloatingCardList />)
-    return () => {
-      root.unmount()
-      host.remove()
-    }
-  }, 'dsh-plan-review-card: floating finder host')
   ctx.effect(() => () => {
     registry.clear()
     if (activeRegistry === registry) activeRegistry = undefined
