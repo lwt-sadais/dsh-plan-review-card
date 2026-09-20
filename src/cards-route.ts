@@ -78,6 +78,8 @@ export interface CardTrace {
 /** One durable card row the route returns to the client. */
 export interface DurableCard {
   callId: string
+  /** Seq of the card's first tool/call event: the stable creation-order sort key clients list by. */
+  seq: number
   model: ResultCardModel
 }
 
@@ -196,13 +198,14 @@ function parseCallArgs(raw: string | undefined): ResultCardArgs {
   }
 }
 
-/** Pair call and result traces into durable card models, oldest first. */
+/** Pair call and result traces into durable card models, ordered by each card's first tool/call seq (oldest first). */
 export function pairCardModels(traces: readonly CardTrace[]): DurableCard[] {
   const cards = new Map<string, DurableCard>()
   for (const trace of [...traces].sort((left, right) => left.seq - right.seq)) {
     if (trace.kind === 'call') {
       cards.set(trace.callId, {
         callId: trace.callId,
+        seq: trace.seq,
         model: { ...parseCallArgs(trace.argsRaw), state: 'waiting', status: WAITING_STATUS },
       })
       continue

@@ -86,8 +86,20 @@ describe('pairCardModels', () => {
     ]
     expect(pairCardModels(traces)).toEqual([{
       callId: 'call-1',
+      seq: 1,
       model: { kind: 'evaluation', title: '评估', summary: '摘要', content: '# 全文', state: 'approved', status: '已批准' },
     }])
+  })
+
+  it('orders cards by their first tool/call seq regardless of trace order', () => {
+    const cards = pairCardModels([
+      traceOfEvent(callEvent(30, 'call-3', { kind: 'report', title: '三', summary: '', content: '三' }))!,
+      traceOfEvent(callEvent(10, 'call-1', { kind: 'report', title: '一', summary: '', content: '一' }))!,
+      traceOfEvent(resultEvent(40, 'call-3', 'approved'))!,
+      traceOfEvent(callEvent(20, 'call-2', { kind: 'report', title: '二', summary: '', content: '二' }))!,
+    ])
+    expect(cards.map((card) => card.callId)).toEqual(['call-1', 'call-2', 'call-3'])
+    expect(cards.map((card) => card.seq)).toEqual([10, 20, 30])
   })
 
   it('keeps unreviewed cards waiting and errors interrupted', () => {
@@ -176,8 +188,8 @@ describe('registerCardsRoute', () => {
       },
     } as CardsHttpRequest, response as CardsHttpResponse)
     expect(response.writeHead).toHaveBeenCalledWith(200, expect.anything())
-    const body = JSON.parse(chunks[0] ?? '{}') as { cards?: Array<{ callId: string; model: { state: string } }> }
-    expect(body.cards).toEqual([{ callId: 'call-1', model: expect.objectContaining({ state: 'adjustment-requested', status: '需调整' }) }])
+    const body = JSON.parse(chunks[0] ?? '{}') as { cards?: Array<{ callId: string; seq: number; model: { state: string } }> }
+    expect(body.cards).toEqual([{ callId: 'call-1', seq: 1, model: expect.objectContaining({ state: 'adjustment-requested', status: '需调整' }) }])
   })
 
   it('refuses unknown sessions and malformed payloads', async () => {

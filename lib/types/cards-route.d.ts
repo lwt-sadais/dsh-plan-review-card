@@ -60,6 +60,8 @@ export interface CardTrace {
 /** One durable card row the route returns to the client. */
 export interface DurableCard {
     callId: string;
+    /** Seq of the card's first tool/call event: the stable creation-order sort key clients list by. */
+    seq: number;
     model: ResultCardModel;
 }
 /** Whether a hostname names the local loopback authority. */
@@ -73,7 +75,7 @@ export declare function isLoopbackHostname(hostname: string): boolean;
 export declare function isTrustedCardRequest(request: CardsHttpRequest, trustedHosts: readonly string[]): boolean;
 /** Extract the present_result_card trace of one raw session event (undefined = unrelated). */
 export declare function traceOfEvent(event: CardSessionEvent): CardTrace | undefined;
-/** Pair call and result traces into durable card models, oldest first. */
+/** Pair call and result traces into durable card models, ordered by each card's first tool/call seq (oldest first). */
 export declare function pairCardModels(traces: readonly CardTrace[]): DurableCard[];
 /** Mount the fenced durable-cards route on the host webserver. */
 export declare function registerCardsRoute(host: CardsRouteContext): void;

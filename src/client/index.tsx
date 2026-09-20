@@ -449,6 +449,8 @@ function installStyle(): () => void {
 /** One quick-finder row: the call identity plus its latest replay-derived model. */
 interface FloatingCardEntry {
   callId: string
+  /** Durable call-event seq when known; missing entries count as pending newest. */
+  callSeq?: number | undefined
   model: ResultCardViewModel
 }
 
@@ -535,7 +537,11 @@ function useSessionLogAnchor(enabled: boolean): FloatingPosition | undefined {
 /** Session-keyed guard so repeated opens never duplicate the durable backfill fetch. */
 const backfillInFlight = new Set<string>()
 
-/** Backfill durable cards the conversation has not mounted yet from the host route. */
+/**
+ * Backfill durable cards the conversation has not mounted yet from the host
+ * route, and patch the durable call-event seq onto cards that only exist as
+ * mounted rows so list surfaces can order by creation time, not publish time.
+ */
 async function backfillHostCards(sessionId: string): Promise<void> {
   const registry = activeRegistry
   if (registry === undefined || backfillInFlight.has(sessionId)) return
@@ -547,10 +553,15 @@ async function backfillHostCards(sessionId: string): Promise<void> {
       body: JSON.stringify({ sessionId }),
     })
     if (!response.ok) return
-    const data = await response.json() as { cards?: Array<{ callId?: unknown; model?: Partial<ResultCardModel> }> }
+    const data = await response.json() as { cards?: Array<{ callId?: unknown; seq?: unknown; model?: Partial<ResultCardModel> }> }
     for (const card of data.cards ?? []) {
       if (typeof card.callId !== 'string' || card.callId === '') continue
-      if (registry.get(sessionId, card.callId) !== undefined) continue
+      const callSeq = typeof card.seq === 'number' ? card.seq : undefined
+      if (registry.get(sessionId, card.callId) !== undefined) {
+        // The row-mounted record stays authoritative; only the durable sort key is patched in.
+        if (callSeq !== undefined) registry.attachCallSeq(sessionId, card.callId, callSeq)
+        continue
+      }
       const model = card.model
       if (typeof model?.title !== 'string' || typeof model.content !== 'string') continue
       const kind: ResultKind = model.kind === 'plan' || model.kind === 'evaluation' || model.kind === 'report' ? model.kind : 'report'
@@ -568,7 +579,7 @@ async function backfillHostCards(sessionId: string): Promise<void> {
           state,
           status: typeof model.status === 'string' ? model.status : WAITING_STATUS,
         },
-      })
+      }, callSeq)
     }
   } catch {
     // Route unavailable (older host half) or network failure: keep the in-memory
@@ -578,7 +589,7 @@ async function backfillHostCards(sessionId: string): Promise<void> {
   }
 }
 
-/** Floating quick finder anchored left of the Session-log capsule, listing every known card. */
+/** Floating quick finder anchored left of the Session-log capsule, listing every known card newest-first by durable call-event seq. */
 function FloatingCardList(): JSX.Element | null {
   const registry = activeRegistry
   const sessionId = useCurrentSessionId()
@@ -602,7 +613,7 @@ function FloatingCardList(): JSX.Element | null {
   /** Re-read the registry snapshot on every mutation and session switch. */
   const sync = useCallback(() => {
     if (registry === undefined) return
-    setEntries(registry.records(sessionId ?? '').map((ref) => ({ callId: ref.callId, model: ref.record.model })))
+    setEntries(registry.records(sessionId ?? '').map((ref) => ({ callId: ref.callId, callSeq: ref.callSeq, model: ref.record.model })))
   }, [registry, sessionId])
 
   useEffect(() => {
@@ -616,6 +627,17 @@ function FloatingCardList(): JSX.Element | null {
     /** Fill the list with durable history even before the message rows mount. */
     void backfillHostCards(sessionId)
   }, [sessionId])
+
+  useEffect(() => {
+    if (sessionId === undefined) return
+    /**
+     * Sweep cards still missing their durable seq — freshly mounted rows or a
+     * previously failed fetch — so the list order settles on the stable sort
+     * key. A failed fetch changes no state, so this cannot loop.
+     */
+    if (!entries.some((entry) => entry.callSeq === undefined)) return
+    void backfillHostCards(sessionId)
+  }, [sessionId, entries])
 
   useEffect(() => {
     if (!open) return
@@ -698,6 +720,15 @@ function FloatingCardList(): JSX.Element | null {
     setPanelCallId(entry.callId)
   }, [sessionId, setPanelCallId])
 
+  /** Open the list and retry a pending seq backfill right before the user reads it. */
+  const toggleList = (): void => {
+    const next = !open
+    setOpen(next)
+    if (next && sessionId !== undefined && entries.some((entry) => entry.callSeq === undefined)) {
+      void backfillHostCards(sessionId)
+    }
+  }
+
   if (registry === undefined || sessionId === undefined || entries.length === 0) return null
 
   const panelRecord = panelCallId === undefined ? undefined : registry.get(sessionId, panelCallId)
@@ -743,7 +774,7 @@ function FloatingCardList(): JSX.Element | null {
             </ul>
           </div>
         )}
-        <button type="button" className="dprc-fab" aria-label="结果卡片列表" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <button type="button" className="dprc-fab" aria-label="结果卡片列表" aria-expanded={open} onClick={toggleList}>
           ▤{entries.length > 0 && <span className="dprc-fab-badge">{entries.length}</span>}
         </button>
       </div>

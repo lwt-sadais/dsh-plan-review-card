@@ -52,7 +52,7 @@ describe('ResultCardRegistry', () => {
     expect(registry.get('session-a', 'call-1')).toBeUndefined()
   })
 
-  it('lists known cards of one session in first-known order', () => {
+  it('lists cards without a seq in first-known order as the fallback', () => {
     const registry = new ResultCardRegistry()
     registry.publish('session-a', 'call-2', record('approved'))
     registry.publish('session-a', 'call-1', record())
@@ -61,6 +61,36 @@ describe('ResultCardRegistry', () => {
     const refs = registry.records('session-a')
     expect(refs.map((ref) => ref.callId)).toEqual(['call-2', 'call-1'])
     expect(refs[0]?.record.model.state).toBe('approved')
+  })
+
+  it('orders cards by the durable call seq regardless of publish order', () => {
+    const registry = new ResultCardRegistry()
+    registry.publish('session-a', 'call-3', record(), 30)
+    registry.publish('session-a', 'call-1', record(), 10)
+    registry.publish('session-a', 'call-2', record(), 20)
+    const refs = registry.records('session-a')
+    expect(refs.map((ref) => ref.callId)).toEqual(['call-1', 'call-2', 'call-3'])
+    expect(refs.map((ref) => ref.callSeq)).toEqual([10, 20, 30])
+  })
+
+  it('treats seq-pending cards as newest and settles them once seqs arrive', () => {
+    const registry = new ResultCardRegistry()
+    registry.publish('session-a', 'call-1', record(), 10)
+    registry.publish('session-a', 'call-2', record())
+    expect(registry.records('session-a').map((ref) => ref.callId)).toEqual(['call-2', 'call-1'])
+    registry.attachCallSeq('session-a', 'call-2', 20)
+    expect(registry.records('session-a').map((ref) => ref.callId)).toEqual(['call-1', 'call-2'])
+  })
+
+  it('patches the seq of an already-mounted record without touching its content', () => {
+    const registry = new ResultCardRegistry()
+    const inspect = vi.fn()
+    registry.publish('session-a', 'call-1', { ...record(), inspect })
+    registry.attachCallSeq('session-a', 'call-1', 10)
+    const ref = registry.records('session-a')[0]
+    expect(ref?.callSeq).toBe(10)
+    expect(ref?.record.inspect).toBe(inspect)
+    expect(ref?.record.model.title).toBe('实现分析')
   })
 
   it('notifies change subscribers on publish, inspect removal, and clear', () => {

@@ -47,7 +47,16 @@ describe('complete result presentation boundaries', () => {
   it('backfills durable cards from the host route without clobbering mounted records', async () => {
     const source = await clientSource()
     expect(source).toContain('fetch(CARDS_ROUTE')
-    expect(source).toContain('registry.get(sessionId, card.callId) !== undefined) continue')
+    expect(source).toContain('if (callSeq !== undefined) registry.attachCallSeq(sessionId, card.callId, callSeq)')
+    expect(source).toContain('}, callSeq)')
+  })
+
+  it('orders the finder list newest-first by the durable call-event seq', async () => {
+    const source = await clientSource()
+    expect(source).toContain('callSeq: ref.callSeq')
+    expect(source).toContain('entries.slice().reverse()')
+    expect(source).toContain('entry.callSeq === undefined')
+    expect(source).toContain('onClick={toggleList}')
   })
 
   it('anchors the finder to the left of the Session-log capsule with a safe fallback', async () => {
