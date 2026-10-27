@@ -53,11 +53,15 @@ export interface CardsRouteContext {
             handler: (request: CardsHttpRequest, response: CardsHttpResponse) => void | Promise<void>;
         }): () => void;
     };
-    webRuntime?: {
-        trustedHosts?: readonly string[];
-    } | undefined;
     on(event: string, listener: (session: unknown, event: CardSessionEvent) => void): () => void;
 }
+/**
+ * Read the browser-trust authorities at request time. A provider keeps the
+ * route usable when a generation's service becomes available after the plugin
+ * applies (0.2.x `connection`), while 0.1.x `webRuntime` still resolves the
+ * same way.
+ */
+export type TrustedHostsProvider = () => readonly string[];
 /** One extracted present_result_card trace from the durable or live feed. */
 export interface CardTrace {
     seq: number;
@@ -103,4 +107,4 @@ export declare function pairCardModels(traces: readonly CardTrace[]): DurableCar
  */
 export declare function mergedTraces(store: readonly CardTrace[], mirror: readonly CardTrace[]): CardTrace[];
 /** Mount the fenced durable-cards route on the host webserver. */
-export declare function registerCardsRoute(host: CardsRouteContext): void;
+export declare function registerCardsRoute(host: CardsRouteContext, trustedHostsOf?: TrustedHostsProvider): void;

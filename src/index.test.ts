@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
-import { isSubagentSession } from './index.js'
+import { inject, isSubagentSession } from './index.js'
 
 describe('isSubagentSession', () => {
   it('identifies sessions created by the subagent runtime', () => {
@@ -14,13 +14,13 @@ describe('isSubagentSession', () => {
 })
 
 describe('host route mounting', () => {
-  it('requires the webserver, session store, and web runtime services', async () => {
-    const source = await readFile(new URL('./index.ts', import.meta.url), 'utf8')
-    expect(source).toContain("'webServer', 'sessions', 'webRuntime'")
+  it('keeps only the services both supported generations provide', () => {
+    expect(inject).toEqual(['agents', 'tools', 'systemPrompt', 'userQuestions', 'webServer', 'sessions'])
+    expect(inject).not.toContain('webRuntime')
   })
 
-  it('mounts the fenced durable-cards route at composition time', async () => {
+  it('mounts the fenced durable-cards route with a runtime-resolved trust provider', async () => {
     const source = await readFile(new URL('./index.ts', import.meta.url), 'utf8')
-    expect(source).toContain('registerCardsRoute(ctx as Context & CardsRouteContext)')
+    expect(source).toContain('registerCardsRoute(ctx as Context & CardsRouteContext, () => resolveTrustedHosts(ctx))')
   })
 })

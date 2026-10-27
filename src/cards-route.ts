@@ -72,9 +72,16 @@ export interface CardsRouteContext {
       handler: (request: CardsHttpRequest, response: CardsHttpResponse) => void | Promise<void>
     }): () => void
   }
-  webRuntime?: { trustedHosts?: readonly string[] } | undefined
   on(event: string, listener: (session: unknown, event: CardSessionEvent) => void): () => void
 }
+
+/**
+ * Read the browser-trust authorities at request time. A provider keeps the
+ * route usable when a generation's service becomes available after the plugin
+ * applies (0.2.x `connection`), while 0.1.x `webRuntime` still resolves the
+ * same way.
+ */
+export type TrustedHostsProvider = () => readonly string[]
 
 /** One extracted present_result_card trace from the durable or live feed. */
 export interface CardTrace {
@@ -365,14 +372,16 @@ function methodOf(url: string | undefined): string | undefined {
 }
 
 /** Mount the fenced durable-cards route on the host webserver. */
-export function registerCardsRoute(host: CardsRouteContext): void {
+export function registerCardsRoute(
+  host: CardsRouteContext,
+  trustedHostsOf: TrustedHostsProvider = () => [],
+): void {
   const mirror = createCardMirror(host)
-  const trustedHosts = host.webRuntime?.trustedHosts ?? []
   host.webServer.register({
     kind: 'prefix',
     path: CARDS_ROUTE_PREFIX,
     handler: async (request, response) => {
-      if (!isTrustedCardRequest(request, trustedHosts)) {
+      if (!isTrustedCardRequest(request, trustedHostsOf())) {
         writeJson(response, 403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
         return
       }

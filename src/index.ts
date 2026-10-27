@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
 import { registerCardsRoute, type CardsRouteContext } from './cards-route.js'
+import { isCancelledQuestionError, resolveTrustedHosts } from './compat.js'
 import {
   ADJUST_LABEL,
   APPROVE_LABEL,
@@ -73,8 +73,13 @@ const outputSchema = {
   },
 } as const
 
-/** Register the structured-result tool and its model-facing semantic trigger guidance. */
-export const inject = ['agents', 'tools', 'systemPrompt', 'userQuestions', 'webServer', 'sessions', 'webRuntime']
+/**
+ * Register the structured-result tool and its model-facing semantic trigger
+ * guidance. `webRuntime` is intentionally not required: 0.2.x no longer
+ * provides it, and the card route reads the trust list through `ctx.get` so
+ * both generations share this declaration.
+ */
+export const inject = ['agents', 'tools', 'systemPrompt', 'userQuestions', 'webServer', 'sessions']
 
 /** Identify sessions owned by the subagent runtime rather than a direct user conversation. */
 export function isSubagentSession(header: { origin?: string }): boolean {
@@ -84,7 +89,7 @@ export function isSubagentSession(header: { origin?: string }): boolean {
 export function apply(ctx: Context): void {
   // The card-finder route reads the session store through a structural face;
   // the harness Context provides these services at runtime via `inject`.
-  registerCardsRoute(ctx as Context & CardsRouteContext)
+  registerCardsRoute(ctx as Context & CardsRouteContext, () => resolveTrustedHosts(ctx))
 
   ctx.systemPrompt.section({
     name: 'result-card:policy',
@@ -128,7 +133,7 @@ export function apply(ctx: Context): void {
         if (item === undefined) return { outcome: 'cancelled' as const }
         return resolveReview(item.selected, item.custom)
       } catch (error) {
-        if (error instanceof UserQuestionError && error.code === 'ASK_CANCELLED') {
+        if (isCancelledQuestionError(error)) {
           return { outcome: 'cancelled' as const }
         }
         throw error

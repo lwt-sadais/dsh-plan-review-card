@@ -19,6 +19,7 @@ import {
   type ReviewOutcome,
 } from '../contract.js'
 import { ResultCardRegistry, type ResultCardViewModel } from './result-registry.js'
+import { resolveSessionId, sessionIdFromSlotProps } from './session-id.js'
 import {
   openResultSidebar,
   registerResultSidebar,
@@ -104,6 +105,8 @@ type ToolBlock = RunningToolBlock | SettledToolBlock
 interface ToolRowProps {
   block: ToolBlock
   inspect?: () => void
+  /** Conversation identity supplied by the 0.2.x slot runtime; older runtimes omit it. */
+  sessionId?: string
 }
 
 /** Slot registry face used by the plugin: keyed tool views plus list-slot dock entries. */
@@ -126,13 +129,29 @@ interface ClientContext extends SidebarContext {
 let activeContext: ClientContext | undefined
 let activeRegistry: ResultCardRegistry | undefined
 
-/** Read the current conversation identity through the sessions list observable. */
-function useCurrentSessionId(): string | undefined {
+/**
+ * Resolve the conversation identity without dropping the 0.1.x fallback:
+ * 0.2.x slot runtimes pass it through props, while older compositions expose
+ * the same fact as the sessions list snapshot's `current` field.
+ * @param fromProps - session id read from the slot props, if any.
+ * @returns the conversation id, or undefined before either source is ready.
+ */
+function useSessionId(fromProps: string | undefined): string | undefined {
   const sessions = activeContext?.sessions
-  return useSyncExternalStore(
-    useMemo(() => sessions === undefined ? () => () => {} : (listener: () => void) => sessions.list.subscribe(listener), [sessions]),
-    useCallback(() => sessions?.list.getSnapshot().current, [sessions]),
+  const fromList = useSyncExternalStore(
+    useMemo(() => {
+      if (sessions === undefined) return () => () => {}
+      const list = sessions.list
+      return typeof list.subscribe === 'function'
+        ? (listener: () => void) => list.subscribe(listener)
+        : () => () => {}
+    }, [sessions]),
+    useCallback(() => {
+      const current = sessions?.list?.getSnapshot?.()?.current
+      return typeof current === 'string' ? current : undefined
+    }, [sessions]),
   )
+  return resolveSessionId(fromProps, fromList)
 }
 
 /** Parse complete card arguments from a running or settled tool snapshot. */
@@ -353,9 +372,9 @@ function ResultPanel(props: {
 }
 
 /** Render a persistent structured-result card that opens its complete content in a side panel. */
-function ResultCard({ block, inspect }: ToolRowProps): JSX.Element {
+function ResultCard({ block, inspect, sessionId: fromProps }: ToolRowProps): JSX.Element {
   const model = useMemo(() => cardModel(block), [block])
-  const sessionId = useCurrentSessionId()
+  const sessionId = useSessionId(fromProps)
   const [open, setOpen] = useState(false)
   const panelId = `dprc-panel-${block.callId}`
 
@@ -556,9 +575,9 @@ async function backfillHostCards(sessionId: string): Promise<void> {
 type CardsDockProps = PropsRuntime<'conversation.input.left'>
 
 /** Composer toolbar entry listing every known card of the session, newest-first by durable call-event seq. */
-function CardsDock(_props: CardsDockProps): JSX.Element | null {
+function CardsDock(props: CardsDockProps): JSX.Element | null {
   const registry = activeRegistry
-  const sessionId = useCurrentSessionId()
+  const sessionId = useSessionId(sessionIdFromSlotProps(props))
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<FloatingCardEntry[]>([])
   const [panelCallId, setPanelCallIdState] = useState<string>()

@@ -92,7 +92,15 @@ pnpm run check
 
 ## 兼容性
 
-兼容 DeepSeek Harness `0.1.2-rc.1` 及以上的 Bundle、Tool、User Questions、Client Slot、Tool View 与 Host WebServer 契约；当前开发与构建基线为 `0.1.2-rc.1`，并已在 `0.1.5-rc.2` 运行时（Desktop 2.0.x）验证会话历史回放与输入框工具栏插槽。
+同一份产物兼容 DeepSeek Harness `0.1.2-rc.1` 到 `0.2.1-rc.3` 的 Bundle、Tool、User Questions、Client Slot、Tool View 与 Host WebServer 契约；开发与构建基线仍为 `0.1.2-rc.1`，`0.1.5-rc.2`（Desktop 2.0.x）与 `0.2.1-rc.3` 均已验证。
+
+跨版本差异在运行时按能力探测，而不是按版本号分支：
+
+- `trustedHosts`：优先读取 `webRuntime.trustedHosts`（0.1.x），不存在时回退到 `connection.trustedHosts`（0.2.x）；
+- 审查取消错误码：同时识别 `ASK_CANCELLED`（0.1.x）与 `ASK_ABORTED`（0.2.x）；
+- 当前会话 id：优先取 slot props 的 `sessionId`（0.2.x），回退到 `sessions.list.current`（0.1.x）。
+
+`webRuntime` 不再列入必需 `inject`，因此 0.2.x 环境不会因缺少该服务而无法激活；旧版本仍通过同一读取路径获得原有行为。
 
 ## 许可证
 
