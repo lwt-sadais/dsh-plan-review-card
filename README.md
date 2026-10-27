@@ -40,7 +40,7 @@
 从 GitHub 安装到 Desktop Profile（锚定当前版本提交，升级时同步更新）：
 
 ```bash
-dsh plugin add --profile desktop github:lwt-sadais/dsh-plan-review-card#6250c6bf1a9f27a314708d4435d1dcf9c77e169c
+dsh plugin add --profile desktop github:lwt-sadais/dsh-plan-review-card#be5b99e5573a563b194ea939b550aee55785c41e
 ```
 
 本地开发安装：
