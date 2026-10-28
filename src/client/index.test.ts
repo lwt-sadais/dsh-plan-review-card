@@ -7,10 +7,12 @@ async function clientSource(): Promise<string> {
 }
 
 describe('complete result presentation boundaries', () => {
-  it('registers a better-sidebar result view and opens it before the fallback panel', async () => {
+  it('registers the native right sidebar and the better-sidebar view before the fallback panel', async () => {
     const source = await clientSource()
+    expect(source).toContain('registerNativeResultSidebar(ctx, ctx.slots as unknown as NativeSlotRegistry, ResultCardSidebarView, nativeResultTitle)')
     expect(source).toContain('registerResultSidebar(ctx, ResultCardSidebarView)')
-    expect(source).toMatch(/openResultSidebar\(activeContext, sessionId, block\.callId, model\.title\)\) return/u)
+    expect(source).toContain('openNativeResultSidebar(activeContext, sessionId, callId)')
+    expect(source).toMatch(/openCardSidebar\(sessionId, block\.callId, model\.title\)\) return/u)
     expect(source).toContain("export const inject = ['slots', 'sessions']")
   })
 
@@ -39,7 +41,7 @@ describe('complete result presentation boundaries', () => {
   it('opens finder cards through the sidebar, mounted-row reveal, or embedded panel', async () => {
     const source = await clientSource()
     expect(source).toContain('data-dprc-call-id={block.callId}')
-    expect(source).toContain('openResultSidebar(activeContext, sessionId, entry.callId, entry.model.title)')
+    expect(source).toContain('openCardSidebar(sessionId, entry.callId, entry.model.title)')
     expect(source).toContain('window.dispatchEvent(new CustomEvent(REMOTE_OPEN_EVENT, { detail: entry.callId }))')
     expect(source).toContain('setPanelCallId(entry.callId)')
   })

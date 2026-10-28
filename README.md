@@ -7,16 +7,17 @@
 - 支持三类结果：实施方案、评估报告、通用分析报告。
 - 卡片显示类型、标题、摘要和审查状态。
 - 会话输入框工具栏"结果卡片"入口（位于附件、麦克风与 Git Diff、Git History 之后）：展开后列出当前会话的全部结果卡片（类型、标题、状态、摘要），按卡片创建时间从新到旧排序，点击直接打开对应卡片全文，长会话历史卡片也能直达；列表可拖动并记忆位置。
-- 安装 `dsh-better-sidebar >= 0.17.1` 时，点击卡片会把完整 Markdown 打开为统一侧边栏 Tab，支持会话隔离、分屏、拖拽和自由窗口；同一卡片重复点击只聚焦已有 Tab。
-- 未安装或尚未加载 better-sidebar 时，自动降级到原有非阻塞 Portal 阅读栏，可继续操作会话和输入框。
+- 点击卡片优先在 DSH 原生右侧栏打开结果 Tab（0.2.x），右侧栏自动展开；同一卡片重复点击只聚焦已有 Tab，不会重复开页。
+- 在未提供原生右侧栏的旧版本上，安装 `dsh-better-sidebar >= 0.17.1` 时打开统一侧边栏 Tab，支持会话隔离、分屏、拖拽和自由窗口。
+- 原生右侧栏与 better-sidebar 都不可用时，自动降级到原有非阻塞 Portal 阅读栏，可继续操作会话和输入框。
 - Portal 降级模式可拖动阅读栏左边缘调整宽度，并自动记忆宽度偏好。
 - 一键复制完整 Markdown。
 - 一键导出 `.md` 文件。
 - 用户可以批准、拒绝，或输入批注要求模型调整。
 - 要求调整后，模型读取批注、生成完整新版本并再次提交卡片。
-- 历史卡片来自持久化的 `tool/call` 与 `tool/result`，刷新或恢复会话后仍可显示；侧边栏 Tab 仅持久化 `callId`，完整 Markdown 不会重复写入 localStorage。
+- 历史卡片来自持久化的 `tool/call` 与 `tool/result`，刷新或恢复会话后仍可显示；侧边栏 Tab 仅持久化卡片标识（会话 id 与 callId）和标题，完整 Markdown 不会重复写入 localStorage。
 - 仅主 Agent 可使用结果卡片；子 Agent 不加载该工具及其触发提示，避免并发任务要求用户逐个审批。
-- 使用 DSH 官方 Bundle、Tool、User Questions、Client Slot 与 Host WebServer 扩展点，不修改 DSH Desktop 源码。
+- 使用 DSH 官方 Bundle、Tool、User Questions、Client Slot、Tool View、Sidebar Right Tab 与 Host WebServer 扩展点，不修改 DSH Desktop 源码。
 
 ## 工作方式
 
@@ -77,9 +78,9 @@ dsh plugin remove --profile desktop dsh-plan-review-card
 分析这个需求，最终给出可执行的技术改造方案。
 ```
 
-预期结果是消息流出现结构化卡片，底部显示 DSH 原生审查面板。点击卡片后，若已安装兼容版本的 better-sidebar，全文会作为侧边栏 Tab 打开；否则使用内置 Portal 阅读栏。两种模式均可复制或导出，审查面板用于批准、拒绝和填写调整意见。
+预期结果是消息流出现结构化卡片，底部显示 DSH 原生审查面板。点击卡片后，优先在 DSH 原生右侧栏打开结果 Tab；未提供原生右侧栏的旧版本回退到 better-sidebar（若安装），再回退到内置 Portal 阅读栏。三种展示方式均可复制或导出，审查面板用于批准、拒绝和填写调整意见。
 
-侧边栏布局恢复可能早于历史消息行加载；此时结果 Tab 会显示恢复提示，对应结果卡进入消息窗口后自动恢复全文。
+结果 Tab 的恢复可能早于历史消息行加载；此时会显示恢复提示，并主动向 Host 请求该卡片的持久化记录，对应结果卡进入消息窗口后自动恢复全文。
 
 ## 本地开发
 
@@ -92,10 +93,11 @@ pnpm run check
 
 ## 兼容性
 
-同一份产物兼容 DeepSeek Harness `0.1.2-rc.1` 到 `0.2.1-rc.3` 的 Bundle、Tool、User Questions、Client Slot、Tool View 与 Host WebServer 契约；开发与构建基线仍为 `0.1.2-rc.1`，`0.1.5-rc.2`（Desktop 2.0.x）与 `0.2.1-rc.3` 均已验证。
+同一份产物兼容 DeepSeek Harness `0.1.2-rc.1` 到 `0.2.1-rc.3` 的 Bundle、Tool、User Questions、Client Slot、Tool View、Sidebar Right Tab 与 Host WebServer 契约；开发与构建基线仍为 `0.1.2-rc.1`，`0.1.5-rc.2`（Desktop 2.0.x）与 `0.2.1-rc.3` 均已验证。
 
 跨版本差异在运行时按能力探测，而不是按版本号分支：
 
+- 侧边栏展示：优先 DSH 原生右侧栏 Tab（0.2.x），其次 `dsh-better-sidebar`（0.1.x，可选），最后回退 Portal；
 - `trustedHosts`：优先读取 `webRuntime.trustedHosts`（0.1.x），不存在时回退到 `connection.trustedHosts`（0.2.x）；
 - 审查取消错误码：同时识别 `ASK_CANCELLED`（0.1.x）与 `ASK_ABORTED`（0.2.x）；
 - 当前会话 id：优先取 slot props 的 `sessionId`（0.2.x），回退到 `sessions.list.current`（0.1.x）。

@@ -19,6 +19,7 @@ import {
   type ReviewOutcome,
 } from '../contract.js'
 import { ResultCardRegistry, type ResultCardViewModel } from './result-registry.js'
+import { openNativeResultSidebar, registerNativeResultSidebar, type NativeSlotRegistry } from './native-sidebar.js'
 import { resolveSessionId, sessionIdFromSlotProps } from './session-id.js'
 import {
   openResultSidebar,
@@ -250,6 +251,12 @@ function ResultCardSidebarView({ scope, tab }: ResultTabProps): JSX.Element {
       return registry.get(scope.sessionId, callId)
     }, [registry, scope.sessionId, callId]),
   )
+  // Restored or reloaded tabs may mount before the owning message row; ask the
+  // host route for the durable card pair instead of leaving the view empty.
+  useEffect(() => {
+    if (record !== undefined || callId === undefined || scope.sessionId === '') return
+    void backfillHostCards(scope.sessionId)
+  }, [record, callId, scope.sessionId])
   if (record === undefined) {
     return <div className="dprc-sidebar-empty">正在从会话记录恢复完整内容…<br />请在消息流中加载或点击对应结果卡。</div>
   }
@@ -267,6 +274,18 @@ function ResultCardSidebarView({ scope, tab }: ResultTabProps): JSX.Element {
       <ResultContent model={record.model} inspect={record.inspect} onReview={focusReview} />
     </section>
   )
+}
+
+/** Resolve a native result tab chip title from the live in-memory card registry. */
+function nativeResultTitle(sessionId: string, callId: string): string | undefined {
+  return activeRegistry?.get(sessionId, callId)?.model.title
+}
+
+/** Open one card in the native right sidebar first, then the legacy unified sidebar. */
+function openCardSidebar(sessionId: string, callId: string, title: string): boolean {
+  if (activeContext === undefined) return false
+  return openNativeResultSidebar(activeContext, sessionId, callId)
+    || openResultSidebar(activeContext, sessionId, callId, title)
 }
 
 /** Keep the desktop panel inside readable and interaction-safe viewport bounds. */
@@ -387,10 +406,9 @@ function ResultCard({ block, inspect, sessionId: fromProps }: ToolRowProps): JSX
     }
   }, [sessionId, block.callId, model, inspect])
 
-  /** Open this card in the unified sidebar, falling back to the legacy Portal. */
+  /** Open this card in the native right sidebar, then the legacy unified sidebar. */
   const showPanel = (): void => {
-    if (sessionId !== undefined && activeContext !== undefined
-      && openResultSidebar(activeContext, sessionId, block.callId, model.title)) return
+    if (sessionId !== undefined && openCardSidebar(sessionId, block.callId, model.title)) return
     window.dispatchEvent(new CustomEvent(PANEL_OPEN_EVENT, { detail: block.callId }))
     setOpen(true)
   }
@@ -696,11 +714,10 @@ function CardsDock(props: CardsDockProps): JSX.Element | null {
     clearFloatingPosition(LIST_POSITION_STORAGE_KEY)
   }
 
-  /** Open one card: sidebar first, then reveal the mounted row, else read in place. */
+  /** Open one card: native right sidebar first, then legacy sidebar, then mounted row, else read in place. */
   const openCard = useCallback((entry: FloatingCardEntry): void => {
     setOpen(false)
-    if (sessionId !== undefined && activeContext !== undefined
-      && openResultSidebar(activeContext, sessionId, entry.callId, entry.model.title)) return
+    if (sessionId !== undefined && openCardSidebar(sessionId, entry.callId, entry.model.title)) return
     window.dispatchEvent(new CustomEvent(PANEL_OPEN_EVENT, { detail: entry.callId }))
     const row = document.querySelector<HTMLElement>(`[data-dprc-call-id="${CSS.escape(entry.callId)}"]`)
     if (row !== null) {
@@ -790,6 +807,7 @@ export function apply(ctx: ClientContext): void {
   const registry = new ResultCardRegistry()
   activeContext = ctx
   activeRegistry = registry
+  registerNativeResultSidebar(ctx, ctx.slots as unknown as NativeSlotRegistry, ResultCardSidebarView, nativeResultTitle)
   registerResultSidebar(ctx, ResultCardSidebarView)
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: RESULT_CARD_TOOL }, ResultCard))
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
